@@ -545,17 +545,29 @@ filter_active = filter_type != "Show All (No Filters)"
 
 
 # =========================================================
-# 9. Sidebar - Custom Colours
+# 9. Main Page - Custom Colours
 # =========================================================
-st.sidebar.header("🎨 Customise Team Colors")
+st.markdown("### 🎨 Customise Team Colors")
 
 color_map = {}
 
-with st.sidebar.expander("Click to change colors"):
-    for dept in sorted(clean_df['Color Group'].dropna().astype(str).unique()):
-        default_c = default_palette.get(dept, '#ced4da')
-        color_map[dept] = st.color_picker(f"{dept}", default_c)
+with st.expander("Click to change colors"):
+    color_groups = sorted(clean_df['Color Group'].dropna().astype(str).unique())
 
+    # Show colour pickers in rows of 4 so they have enough space
+    cols_per_row = 4
+
+    for i in range(0, len(color_groups), cols_per_row):
+        cols = st.columns(cols_per_row)
+
+        for j, dept in enumerate(color_groups[i:i + cols_per_row]):
+            with cols[j]:
+                default_c = default_palette.get(dept, '#ced4da')
+                color_map[dept] = st.color_picker(
+                    dept,
+                    default_c,
+                    key=f"color_picker_{dept}"
+                )
 
 # =========================================================
 # 10. Sidebar - Layout and Font Settings

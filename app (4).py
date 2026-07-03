@@ -6,9 +6,10 @@ import re
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
 
+# 2. Pre-load Data with User-Friendly Columns
 if 'org_data' not in st.session_state:
     st.session_state.org_data = pd.DataFrame({
-        'Name': [
+        'Name / Team Name': [
             'Eric Tan', 'Project Based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS', 
             'ATC', 'ATC / ATS', 'ATS', 'CBI', 'Comms / DCS / RCS / Network', 'CSF', 'Signalling', 
             'Subcon', 'Train', 'Augustine', 'Eric', 'Helmi', 'TBC', 'Diyana', 'Teerapat', 'Erwin', 
@@ -16,13 +17,37 @@ if 'org_data' not in st.session_state:
             'Raymond', 'Damuel', 'Marek', 'Farid', 'Manish', 'Irfan', 'Khai', 'Mohan', 'Nazmi', 
             'Sam', 'Sufian', 'Syafiq', 'Vincent', 'Zaki', 'Zul', 'Akmal', 'Irwan', 'Richter'
         ],
-        'Role': [
-            'T&C Manager', 'Group', 'Group', 'Sub Group', 'Sub Group', 'Sub Group', 
-            'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 
-            'Sub Group', 'Sub Group', 'OSIT Manager', 'T&C Engineer 2', 'ATS T&C Engineer 1', 'Mainline T&C Manager', 'T&C Coordinator', 'T&C Coordinator', 'ATC T&C Engineer 2', 
+        'Type': [
+            'Person', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 
+            'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 
+            'Team Box', 'Team Box', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 
+            'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 
+            'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 
+            'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person'
+        ],
+        'Job Title': [
+            'T&C Manager', '', '', '', '', '', 
+            '', '', '', '', '', '', '', 
+            '', '', 'OSIT Manager', 'T&C Engineer 2', 'ATS T&C Engineer 1', 'Mainline T&C Manager', 'T&C Coordinator', 'T&C Coordinator', 'ATC T&C Engineer 2', 
             'ATC T&C Engineer 1', 'ATC T&C Engineer 1', 'ATC T&C Engineer 1', 'ATC/ATS T&C Engineer 3', 'ATC/ATS T&C Engineer 1', 'ATS T&C Engineer 3', 'ATS T&C Engineer', 'ATS T&C Engineer 2', 'Sig T&C Engineer 2', 
             'ATS T&C Engineer 3', 'Comms T&C Engineer 3', 'RCS/Network Engineer', 'Sig T&C Engineer 1', 'Sig T&C Engineer 4', 'Subcon 4', 'Subcon 1', 'Subcon 1', 'Subcon 3', 
             'Subcon 2', 'Subcon 2', 'Subcon 4', 'Subcon 2', 'Subcon 1', 'Subcon 3', 'Subcon', 'Train Engineer 1', 'Train Engineer 2'
+        ],
+        'Reports To': [
+            'None', 'Eric Tan', 'Eric Tan', 'Project Based', 'Project Based', 'Project Based', 
+            'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 
+            'Shared T&C Pool', 'Shared T&C Pool', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
+            'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS', 
+            'ATS', 'Comms / DCS / RCS / Network', 'Comms / DCS / RCS / Network', 'Signalling', 'Signalling', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 
+            'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Train', 'Train'
+        ],
+        'Color Group': [
+            'Management', 'Group', 'Group', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
+            'ATC / ATS', 'ATS', 'ATC', 'Comms / DCS / RCS / Network', 'Group', 'Signalling', 'Subcon', 
+            'Train', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
+            'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS', 
+            'ATS', 'Comms / DCS / RCS / Network', 'Comms / DCS / RCS / Network', 'Signalling', 'Signalling', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 
+            'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Train', 'Train'
         ],
         'Time Period': [
             'Feb 25 to Dec 29', '', '', '', '', '', 
@@ -31,34 +56,18 @@ if 'org_data' not in st.session_state:
             'Apr 26 to Nov 26', 'Jan 26 to Oct 26', 'Oct 27 to Dec 27', 'Dec 25 to Sep 28', 'Jan 27 to Sep 28', 'Aug 25 to Sep 28', 'Jul 26 to Sep 26', 'Apr 26 to Nov 26', 'Dec 25 to Sep 27', 
             'Jul 26 to Jul 27', 'Aug 25 to Feb 27', 'Jun 26 to Jul 26', 'Aug 25 to Jul 27', 'Apr 26 to Nov 26', 'Aug 26 to Nov 26', 'Dec 25 to Sep 26', 'Oct 26 to Sep 28', 'Aug 26 to Nov 26', 
             'Oct 26 to Sep 28', 'Aug 25 to Jul 27', 'Oct 26 to Dec 27', 'Dec 25 to Sep 26', 'Aug 25 to Jul 27', 'Oct 26 to Dec 27', '', 'Jan 26 to Dec 28', 'Jan 26 to Dec 28'
-        ],
-        'Department': [
-            'Management', 'Group', 'Group', 'Project Based', 'Project Based', 'Project Based', 
-            'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 
-            'Shared Pool', 'Shared Pool', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
-            'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS', 
-            'ATS', 'Comms / DCS / RCS / Network', 'Comms / DCS / RCS / Network', 'Signalling', 'Signalling', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 
-            'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Train', 'Train'
-        ],
-        'Supervisor': [
-            'None', 'Eric Tan', 'Eric Tan', 'Project Based', 'Project Based', 'Project Based', 
-            'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 
-            'Shared T&C Pool', 'Shared T&C Pool', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
-            'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS', 
-            'ATS', 'Comms / DCS / RCS / Network', 'Comms / DCS / RCS / Network', 'Signalling', 'Signalling', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 
-            'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Train', 'Train'
         ]
     })
 
-clean_df = st.session_state.org_data.dropna(subset=['Name']).copy()
-clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
-clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
-clean_df['Role Group'] = clean_df['Role'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
+clean_df = st.session_state.org_data.dropna(subset=['Name / Team Name']).copy()
+clean_df['Name / Team Name'] = clean_df['Name / Team Name'].astype(str).str.strip()
+clean_df['Reports To'] = clean_df['Reports To'].fillna('None').astype(str).str.strip()
+clean_df['Role Group'] = clean_df['Job Title'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
 st.sidebar.header("🔍 View Options")
 filter_type = st.sidebar.radio(
     "Select a view:", 
-    ["Show All (No Filters)", "Highlight by Name", "Highlight by Role Group", "Highlight by Department"]
+    ["Show All (No Filters)", "Highlight by Name", "Highlight by Role Group", "Highlight by Color Group"]
 )
 
 selected_person = "All"
@@ -66,13 +75,15 @@ selected_role_group = "All"
 selected_dept = "All"
 
 if filter_type == "Highlight by Name":
-    selected_person = st.sidebar.selectbox("Select Name:", sorted(clean_df['Name'].unique().tolist()))
+    selected_person = st.sidebar.selectbox("Select Name:", sorted(clean_df['Name / Team Name'].unique().tolist()))
 elif filter_type == "Highlight by Role Group":
-    selected_role_group = st.sidebar.selectbox("Select Role Group:", sorted(clean_df['Role Group'].unique().tolist()))
+    # Filter out empty roles (which belong to Team Boxes)
+    valid_roles = sorted([r for r in clean_df['Role Group'].unique().tolist() if r != ''])
+    selected_role_group = st.sidebar.selectbox("Select Role Group:", valid_roles)
     role_count = len(clean_df[clean_df['Role Group'] == selected_role_group])
     st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
-elif filter_type == "Highlight by Department":
-    selected_dept = st.sidebar.selectbox("Select Department:", sorted(clean_df['Department'].unique().tolist()))
+elif filter_type == "Highlight by Color Group":
+    selected_dept = st.sidebar.selectbox("Select Color Group:", sorted(clean_df['Color Group'].unique().tolist()))
 
 filter_active = filter_type != "Show All (No Filters)"
 
@@ -96,28 +107,63 @@ default_palette = {
 
 color_map = {}
 with st.sidebar.expander("Click to change colors"):
-    for dept in sorted(clean_df['Department'].unique()):
+    for dept in sorted(clean_df['Color Group'].unique()):
         default_c = default_palette.get(dept, '#ced4da')
         color_map[dept] = st.color_picker(f"{dept}", default_c)
 
 st.sidebar.header("📐 Adjust Chart Spacing")
-st.sidebar.write("Use these sliders to pull the boxes closer together or push them apart.")
 with st.sidebar.expander("Layout Settings"):
     chart_width = st.slider("Horizontal Width", 1000, 5000, 1800, 100)
     chart_height = st.slider("Vertical Height", 500, 3000, 1000, 100)
 
 st.markdown("### ✏️ Edit Data Directly")
+st.write("Click any cell to edit. *Reports To* and *Color Group* now have handy dropdowns so you don't have to type out names!")
+
+# Generate a list of all current names for the "Reports To" dropdown
+all_possible_managers = clean_df['Name / Team Name'].tolist() + ['None']
+
+# 4. Streamlit Data Editor with Custom Dropdowns
 edited_df = st.data_editor(
     st.session_state.org_data,
     num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
-    height=250
+    height=350,
+    column_config={
+        "Name / Team Name": st.column_config.TextColumn(
+            "Name / Team Name",
+            required=True
+        ),
+        "Type": st.column_config.SelectboxColumn(
+            "Type",
+            help="Is this a real person or a structural team box?",
+            options=["Person", "Team Box"],
+            required=True
+        ),
+        "Job Title": st.column_config.TextColumn(
+            "Job Title"
+        ),
+        "Reports To": st.column_config.SelectboxColumn(
+            "Reports To",
+            help="Select the Person or Team this row sits under.",
+            options=all_possible_managers,
+            required=True
+        ),
+        "Color Group": st.column_config.SelectboxColumn(
+            "Color Group",
+            help="Select which department color to apply to the box.",
+            options=list(default_palette.keys())
+        ),
+        "Time Period": st.column_config.TextColumn(
+            "Time Period"
+        )
+    }
 )
 st.session_state.org_data = edited_df
 
 st.markdown("***")
 
+# 5. Build Chart
 if not clean_df.empty:
     default_color = '#ced4da' 
 
@@ -128,20 +174,21 @@ if not clean_df.empty:
             return None
         visited.add(current_name)
 
-        person_data = df[df['Name'] == current_name]
+        person_data = df[df['Name / Team Name'] == current_name]
         if person_data.empty:
             return None
         
         person = person_data.iloc[0]
-        role = person.get('Role', 'N/A')
-        role_group = person.get('Role Group', 'N/A')
+        role = person.get('Job Title', '')
+        role_group = person.get('Role Group', '')
         time_period = person.get('Time Period', '')
-        dept = person.get('Department', 'N/A')
+        dept = person.get('Color Group', 'N/A')
+        entry_type = person.get('Type', 'Person')
         
-        actual_supervisor = person.get('Supervisor', 'None')
+        actual_supervisor = person.get('Reports To', 'None')
         display_supervisor = real_supervisor if real_supervisor else actual_supervisor
         
-        real_direct_reports = df[df['Supervisor'] == current_name]['Name'].tolist()
+        real_direct_reports = df[df['Reports To'] == current_name]['Name / Team Name'].tolist()
         reports_str = ", ".join(real_direct_reports) if real_direct_reports else "None"
         
         is_match = True
@@ -150,7 +197,7 @@ if not clean_df.empty:
                 is_match = False
             elif filter_type == "Highlight by Role Group" and role_group != selected_role_group:
                 is_match = False
-            elif filter_type == "Highlight by Department" and dept != selected_dept:
+            elif filter_type == "Highlight by Color Group" and dept != selected_dept:
                 is_match = False
 
         node_color = color_map.get(dept, default_color)
@@ -158,24 +205,24 @@ if not clean_df.empty:
         if filter_active and not is_match:
             item_style = {"color": "#f8f9fa", "borderColor": "#ced4da", "borderWidth": 1}
             display_text = f"{{name_faded|{current_name}}}"
-            if role not in ['Group', 'Sub Group']:
+            if entry_type == 'Person' and str(role).strip() != '':
                 display_text += f"\n{{role_faded|{role}}}"
             if time_period and str(time_period).strip() != '':
                 display_text += f"\n{{time_faded|{time_period}}}"
         else:
             item_style = {"color": node_color, "borderColor": node_color, "borderWidth": 1}
             display_text = f"{{name_active|{current_name}}}"
-            if role not in ['Group', 'Sub Group']:
+            if entry_type == 'Person' and str(role).strip() != '':
                 display_text += f"\n{{role_active|{role}}}"
             if time_period and str(time_period).strip() != '':
                 display_text += f"\n{{time_active|{time_period}}}"
 
         tooltip_value = (
-            f"<b>Name:</b> {current_name}<br/>"
-            f"<b>Role:</b> {role}<br/>"
-            f"<b>Department:</b> {dept}<br/>"
+            f"<b>Name / Team:</b> {current_name}<br/>"
+            f"<b>Role:</b> {role if str(role).strip() != '' else 'N/A'}<br/>"
+            f"<b>Color Group:</b> {dept}<br/>"
             f"<b>Time Period:</b> {time_period if str(time_period).strip() != '' else 'N/A'}<br/>"
-            f"<b>Supervisor:</b> {display_supervisor}<br/>"
+            f"<b>Reports To:</b> {display_supervisor}<br/>"
             f"<b>Direct Reports ({len(real_direct_reports)}):</b> {reports_str}"
         )
 
@@ -186,9 +233,10 @@ if not clean_df.empty:
             "children": []
         }
 
+        # Vertical stacking logic for the bottom levels
         is_bottom_level = True
         for report in real_direct_reports:
-            if not df[df['Supervisor'] == report].empty:
+            if not df[df['Reports To'] == report].empty:
                 is_bottom_level = False
                 break
 
@@ -207,8 +255,8 @@ if not clean_df.empty:
 
         return node
 
-    top_level_matches = clean_df[clean_df['Supervisor'].str.lower() == 'none']
-    root_name = top_level_matches.iloc[0]['Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name']
+    top_level_matches = clean_df[clean_df['Reports To'].str.lower() == 'none']
+    root_name = top_level_matches.iloc[0]['Name / Team Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name / Team Name']
     
     tree_data = build_tree(root_name, clean_df)
 
@@ -247,7 +295,7 @@ if not clean_df.empty:
                 "symbolSize": [150, 60], 
                 "edgeShape": "polyline", 
                 "roam": True,
-                "initialTreeDepth": -1, # Set to -1 to ALWAYS expand all nodes infinitely
+                "initialTreeDepth": -1, # Forces all nodes to stay fully expanded
                 "expandAndCollapse": True,
                 "animationDuration": 550,
                 "animationDurationUpdate": 750,

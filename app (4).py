@@ -7,6 +7,32 @@ import re
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
 
+# Make page wider and allow horizontal scrolling
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 100% !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+
+    div[data-testid="stVerticalBlock"] {
+        overflow-x: auto !important;
+    }
+
+    div[data-testid="stElementContainer"] {
+        overflow-x: auto !important;
+    }
+
+    iframe {
+        min-width: 100% !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # 2. Helper Functions
 def parse_month_year(text, is_end=False):
@@ -240,7 +266,7 @@ st.write(
 )
 
 temp_clean_df = clean_org_data(st.session_state.org_data)
-all_possible_managers = sorted(temp_clean_df['Name / Team Name'].unique().tolist() + ['None'])
+all_possible_managers = sorted(set(temp_clean_df['Name / Team Name'].unique().tolist() + ['None']))
 
 edited_df = st.data_editor(
     st.session_state.org_data,
@@ -353,8 +379,10 @@ with st.sidebar.expander("Click to change colors"):
 st.sidebar.header("📐 Adjust Chart Spacing")
 
 with st.sidebar.expander("Layout Settings"):
-    chart_width = st.slider("Horizontal Width", 1000, 5000, 1800, 100)
-    chart_height = st.slider("Vertical Height", 500, 3000, 1000, 100)
+    chart_width = st.slider("Horizontal Width", 1500, 12000, 5000, 100)
+    chart_height = st.slider("Vertical Height", 700, 5000, 1800, 100)
+    box_width = st.slider("Box Width", 120, 300, 170, 10)
+    box_height = st.slider("Box Height", 50, 120, 65, 5)
 
 
 # 11. Build and Render Chart
@@ -512,11 +540,11 @@ if not clean_df.empty:
                 "data": [tree_data],
                 "orient": "TB",
                 "top": "5%",
-                "left": "2%",
+                "left": "1%",
                 "bottom": "5%",
-                "right": "2%",
+                "right": "1%",
                 "symbol": "rect",
-                "symbolSize": [150, 60],
+                "symbolSize": [box_width, box_height],
                 "edgeShape": "polyline",
                 "roam": True,
                 "initialTreeDepth": -1,

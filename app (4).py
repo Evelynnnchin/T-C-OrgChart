@@ -247,7 +247,7 @@ if not clean_df.empty:
                 "symbolSize": [150, 60], 
                 "edgeShape": "polyline", 
                 "roam": True,
-                "initialTreeDepth": 10 if filter_active else 3, 
+                "initialTreeDepth": -1, # Set to -1 to ALWAYS expand all nodes infinitely
                 "expandAndCollapse": True,
                 "animationDuration": 550,
                 "animationDurationUpdate": 750,

@@ -3,11 +3,12 @@ import pandas as pd
 from streamlit_echarts import st_echarts
 import re
 
+# 1. Page Configuration
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
 
-# 2. Pre-load Data with User-Friendly Columns
-if 'org_data' not in st.session_state:
+# 2. Pre-load Data (With built-in protection against KeyErrors from old sessions)
+if 'org_data' not in st.session_state or 'Name / Team Name' not in st.session_state.org_data.columns:
     st.session_state.org_data = pd.DataFrame({
         'Name / Team Name': [
             'Eric Tan', 'Project Based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS', 
@@ -59,11 +60,13 @@ if 'org_data' not in st.session_state:
         ]
     })
 
+# Clean data dynamically
 clean_df = st.session_state.org_data.dropna(subset=['Name / Team Name']).copy()
 clean_df['Name / Team Name'] = clean_df['Name / Team Name'].astype(str).str.strip()
 clean_df['Reports To'] = clean_df['Reports To'].fillna('None').astype(str).str.strip()
 clean_df['Role Group'] = clean_df['Job Title'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
+# 3. Sidebar - View Options
 st.sidebar.header("🔍 View Options")
 filter_type = st.sidebar.radio(
     "Select a view:", 
@@ -77,7 +80,6 @@ selected_dept = "All"
 if filter_type == "Highlight by Name":
     selected_person = st.sidebar.selectbox("Select Name:", sorted(clean_df['Name / Team Name'].unique().tolist()))
 elif filter_type == "Highlight by Role Group":
-    # Filter out empty roles (which belong to Team Boxes)
     valid_roles = sorted([r for r in clean_df['Role Group'].unique().tolist() if r != ''])
     selected_role_group = st.sidebar.selectbox("Select Role Group:", valid_roles)
     role_count = len(clean_df[clean_df['Role Group'] == selected_role_group])
@@ -87,6 +89,7 @@ elif filter_type == "Highlight by Color Group":
 
 filter_active = filter_type != "Show All (No Filters)"
 
+# 3b. Sidebar - Custom Colors
 st.sidebar.header("🎨 Customise Team Colors")
 default_palette = {
     'Management': '#0081a7', 
@@ -111,18 +114,18 @@ with st.sidebar.expander("Click to change colors"):
         default_c = default_palette.get(dept, '#ced4da')
         color_map[dept] = st.color_picker(f"{dept}", default_c)
 
+# 3c. Sidebar - Spacing
 st.sidebar.header("📐 Adjust Chart Spacing")
 with st.sidebar.expander("Layout Settings"):
     chart_width = st.slider("Horizontal Width", 1000, 5000, 1800, 100)
     chart_height = st.slider("Vertical Height", 500, 3000, 1000, 100)
 
+# 4. Data Editor (With Dropdowns)
 st.markdown("### ✏️ Edit Data Directly")
 st.write("Click any cell to edit. *Reports To* and *Color Group* now have handy dropdowns so you don't have to type out names!")
 
-# Generate a list of all current names for the "Reports To" dropdown
 all_possible_managers = clean_df['Name / Team Name'].tolist() + ['None']
 
-# 4. Streamlit Data Editor with Custom Dropdowns
 edited_df = st.data_editor(
     st.session_state.org_data,
     num_rows="dynamic",
@@ -159,11 +162,12 @@ edited_df = st.data_editor(
         )
     }
 )
+# Save edits back to session state
 st.session_state.org_data = edited_df
 
 st.markdown("***")
 
-# 5. Build Chart
+# 5. Build and Render the Chart
 if not clean_df.empty:
     default_color = '#ced4da' 
 
@@ -202,6 +206,7 @@ if not clean_df.empty:
 
         node_color = color_map.get(dept, default_color)
         
+        # RICH TEXT STYLING
         if filter_active and not is_match:
             item_style = {"color": "#f8f9fa", "borderColor": "#ced4da", "borderWidth": 1}
             display_text = f"{{name_faded|{current_name}}}"
@@ -233,7 +238,7 @@ if not clean_df.empty:
             "children": []
         }
 
-        # Vertical stacking logic for the bottom levels
+        # VERTICAL STACKING LOGIC
         is_bottom_level = True
         for report in real_direct_reports:
             if not df[df['Reports To'] == report].empty:
@@ -255,6 +260,7 @@ if not clean_df.empty:
 
         return node
 
+    # Find the top of the tree
     top_level_matches = clean_df[clean_df['Reports To'].str.lower() == 'none']
     root_name = top_level_matches.iloc[0]['Name / Team Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name / Team Name']
     
@@ -295,7 +301,7 @@ if not clean_df.empty:
                 "symbolSize": [150, 60], 
                 "edgeShape": "polyline", 
                 "roam": True,
-                "initialTreeDepth": -1, # Forces all nodes to stay fully expanded
+                "initialTreeDepth": -1, # Set to -1 to infinitely expand all nodes by default
                 "expandAndCollapse": True,
                 "animationDuration": 550,
                 "animationDurationUpdate": 750,

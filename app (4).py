@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from streamlit_echarts import st_echarts
-import re # Added to clean up role names
+import re
 
 # 1. Page Configuration
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
@@ -56,12 +56,12 @@ if 'org_data' not in st.session_state:
 clean_df = st.session_state.org_data.dropna(subset=['Name']).copy()
 clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
 clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
-# Removes trailing numbers (e.g. "Subcon 1" becomes "Subcon")
+# Removes trailing numbers to create clean Role Groups
 clean_df['Role Group'] = clean_df['Role'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
 # 3. Sidebar for Highlighting and Focus
 st.sidebar.header("🔍 Highlight & Focus")
-st.sidebar.write("Select a filter below to highlight specific teams or roles while keeping the organizational structure intact.")
+st.sidebar.write("Select a filter below to highlight specific teams or roles.")
 
 filter_type = st.sidebar.radio("Highlight by:", ["None", "Name", "Role Group", "Department"])
 
@@ -75,6 +75,11 @@ if filter_type == "Name":
 elif filter_type == "Role Group":
     all_role_groups = sorted(clean_df['Role Group'].unique().tolist())
     selected_role_group = st.sidebar.selectbox("Select Role Group:", all_role_groups)
+    
+    # Calculate and display the count for the selected role group
+    role_count = len(clean_df[clean_df['Role Group'] == selected_role_group])
+    st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
+    
 elif filter_type == "Department":
     all_depts = sorted(clean_df['Department'].unique().tolist())
     selected_dept = st.sidebar.selectbox("Select Department:", all_depts)
@@ -206,16 +211,15 @@ if not clean_df.empty:
             {
                 "type": "tree",
                 "data": [tree_data],
-                "orient": "TB",
-                "top": "5%",
-                "left": "2%",
-                "bottom": "5%",
-                "right": "2%",
+                "orient": "LR", # Left to Right layout allows for vertical stacking
+                "top": "2%",
+                "left": "10%",
+                "bottom": "2%",
+                "right": "20%",
                 "symbol": "roundRect",
                 "symbolSize": [160, 65],
                 "edgeShape": "polyline",
                 "roam": True,
-                # If a filter is applied, expand the tree fully to show the results. Otherwise, collapse slightly.
                 "initialTreeDepth": 10 if filter_active else 2, 
                 "expandAndCollapse": True,
                 "animationDuration": 550,
@@ -224,6 +228,7 @@ if not clean_df.empty:
         ]
     }
 
-    st_echarts(options=options, height="900px", width="5000px")
+    # Increased height significantly to accommodate the vertical stacking without squishing
+    st_echarts(options=options, height="1200px", width="100%")
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

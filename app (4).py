@@ -573,11 +573,3 @@ if not clean_df.empty:
 
 else:
     st.warning("The table is empty. Please add at least one person or team box to generate the chart.")
-
-
-# 12. Reset Button
-st.markdown("***")
-
-if st.button("Reset to Default Data"):
-    st.session_state.org_data = default_data.copy()
-    st.rerun()

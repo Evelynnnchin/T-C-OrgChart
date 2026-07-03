@@ -52,16 +52,13 @@ if 'org_data' not in st.session_state:
         ]
     })
 
-# Dynamically clean the data 
 clean_df = st.session_state.org_data.dropna(subset=['Name']).copy()
 clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
 clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
 clean_df['Role Group'] = clean_df['Role'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
-# 3. Sidebar for Highlighting and Focus
+# 3. Sidebar
 st.sidebar.header("🔍 View Options")
-st.sidebar.write("Choose to see the full colored chart, or highlight specific teams.")
-
 filter_type = st.sidebar.radio(
     "Select a view:", 
     ["Show All (No Filters)", "Highlight by Name", "Highlight by Role Group", "Highlight by Department"]
@@ -72,20 +69,17 @@ selected_role_group = "All"
 selected_dept = "All"
 
 if filter_type == "Highlight by Name":
-    all_names = sorted(clean_df['Name'].unique().tolist())
-    selected_person = st.sidebar.selectbox("Select Name:", all_names)
+    selected_person = st.sidebar.selectbox("Select Name:", sorted(clean_df['Name'].unique().tolist()))
 elif filter_type == "Highlight by Role Group":
-    all_role_groups = sorted(clean_df['Role Group'].unique().tolist())
-    selected_role_group = st.sidebar.selectbox("Select Role Group:", all_role_groups)
+    selected_role_group = st.sidebar.selectbox("Select Role Group:", sorted(clean_df['Role Group'].unique().tolist()))
     role_count = len(clean_df[clean_df['Role Group'] == selected_role_group])
     st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
 elif filter_type == "Highlight by Department":
-    all_depts = sorted(clean_df['Department'].unique().tolist())
-    selected_dept = st.sidebar.selectbox("Select Department:", all_depts)
+    selected_dept = st.sidebar.selectbox("Select Department:", sorted(clean_df['Department'].unique().tolist()))
 
 filter_active = filter_type != "Show All (No Filters)"
 
-# 4. Direct Editor Table
+# 4. Data Editor
 st.markdown("### ✏️ Edit Data Directly")
 edited_df = st.data_editor(
     st.session_state.org_data,
@@ -98,22 +92,31 @@ st.session_state.org_data = edited_df
 
 st.markdown("***")
 
-# 5. Build and Render Chart
+# 5. Build Chart
 if not clean_df.empty:
     
+    # Palette matched to your uploaded screenshot
     color_map = {
-        'Management': '#d9534f', 'Group': '#34495e', 'Project-based': '#9b59b6',
-        'Shared Pool': '#f39c12', 'CRL / OSIT': '#2980b9', 'JRL Mainline': '#27ae60',
-        'RTS': '#16a085', 'ATC': '#8e44ad', 'ATC / ATS': '#c0392b',
-        'ATS': '#e67e22', 'Comms / DCS / RCS / Network': '#f1c40f',
-        'Signalling': '#d35400', 'Subcon': '#7f8c8d', 'Train': '#2c3e50'
+        'Management': '#0081a7', # Dark Teal
+        'Group': '#00afb9',      # Standard Teal
+        'Project-based': '#00afb9', 
+        'Shared Pool': '#00afb9', 
+        'CRL / OSIT': '#00afb9', 
+        'JRL Mainline': '#00afb9',
+        'RTS': '#00afb9', 
+        'ATC': '#00afb9', 
+        'ATC / ATS': '#00afb9',
+        'ATS': '#00afb9', 
+        'Comms / DCS / RCS / Network': '#00afb9',
+        'Signalling': '#00afb9', 
+        'Subcon': '#ffb703',     # Yellow/Orange for External
+        'Train': '#00afb9'
     }
-    default_color = '#bdc3c7'
+    default_color = '#ced4da' # Grey for TBA or unassigned
 
     def build_tree(current_name, df, visited=None, real_supervisor=None):
         if visited is None:
             visited = set()
-        
         if current_name in visited:
             return None
         visited.add(current_name)
@@ -128,11 +131,9 @@ if not clean_df.empty:
         time_period = person.get('Time Period', '')
         dept = person.get('Department', 'N/A')
         
-        # Use the real supervisor if this node was stacked vertically
         actual_supervisor = person.get('Supervisor', 'None')
         display_supervisor = real_supervisor if real_supervisor else actual_supervisor
         
-        # Look up REAL direct reports from the dataframe
         real_direct_reports = df[df['Supervisor'] == current_name]['Name'].tolist()
         reports_str = ", ".join(real_direct_reports) if real_direct_reports else "None"
         
@@ -149,16 +150,15 @@ if not clean_df.empty:
         
         if filter_active and not is_match:
             item_style = {"color": "#f8f9fa", "borderColor": "#ced4da", "borderWidth": 1}
-            label_style = {"color": "#aab7c4", "fontWeight": "normal", "position": "inside", "verticalAlign": "middle", "align": "center", "fontSize": 11, "lineHeight": 16}
         else:
-            item_style = {"color": node_color, "borderColor": node_color, "borderWidth": 2}
-            label_style = {"color": "white", "fontWeight": "bold", "position": "inside", "verticalAlign": "middle", "align": "center", "fontSize": 11, "lineHeight": 16}
+            item_style = {"color": node_color, "borderColor": node_color, "borderWidth": 1}
 
-        display_text = f"{current_name}"
+        # RICH TEXT FORMATTING: This matches the left-aligned, multi-styled text in your image
+        display_text = f"{{name_style|{current_name}}}"
         if role not in ['Group', 'Sub-Group']:
-            display_text += f"\n{role}"
+            display_text += f"\n{{role_style|{role}}}"
         if time_period and str(time_period).strip() != '':
-            display_text += f"\n{time_period}"
+            display_text += f"\n{{time_style|{time_period}}}"
 
         tooltip_value = (
             f"<b>Name:</b> {current_name}<br/>"
@@ -173,21 +173,17 @@ if not clean_df.empty:
             "name": display_text,
             "value": tooltip_value,
             "itemStyle": item_style,
-            "label": label_style,
             "children": []
         }
 
-        # MAGIC TRICK FOR VERTICAL STACKING AT THE BOTTOM
-        # Check if all reports under this person have zero reports of their own
+        # Vertical Stacking Logic for leaf nodes
         is_bottom_level = True
         for report in real_direct_reports:
-            report_has_children = not df[df['Supervisor'] == report].empty
-            if report_has_children:
+            if not df[df['Supervisor'] == report].empty:
                 is_bottom_level = False
                 break
 
         if is_bottom_level and len(real_direct_reports) > 0:
-            # If they are bottom level, link them in a vertical visual chain
             current_chain_link = node
             for report in real_direct_reports:
                 child_node = build_tree(report, df, visited, real_supervisor=current_name)
@@ -195,7 +191,6 @@ if not clean_df.empty:
                     current_chain_link["children"].append(child_node)
                     current_chain_link = child_node
         else:
-            # Otherwise, spread them out horizontally as normal
             for report in real_direct_reports:
                 child_node = build_tree(report, df, visited)
                 if child_node:
@@ -207,6 +202,8 @@ if not clean_df.empty:
     root_name = top_level_matches.iloc[0]['Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name']
     
     tree_data = build_tree(root_name, clean_df)
+
+    required_width = max(1200, len(clean_df) * 160) 
 
     options = {
         "tooltip": {
@@ -226,7 +223,7 @@ if not clean_df.empty:
                 "saveAsImage": {
                     "name": "TC_Org_Chart", 
                     "title": "Download as PNG", 
-                    "pixelRatio": 3 # Forces extremely high resolution for crisp A3 printing
+                    "pixelRatio": 3 
                 }
             }
         },
@@ -234,24 +231,46 @@ if not clean_df.empty:
             {
                 "type": "tree",
                 "data": [tree_data],
-                "orient": "TB", # Restored perfectly to Top-Down
+                "orient": "TB", 
                 "top": "5%",
                 "left": "2%",
                 "bottom": "5%",
                 "right": "2%",
-                "symbol": "roundRect",
-                "symbolSize": [160, 65],
-                "edgeShape": "polyline", # Straight connecting lines
+                "symbol": "rect", # Changed to sharp rectangles to match image
+                "symbolSize": [150, 60], # Adjusted box dimensions
+                "edgeShape": "polyline", 
                 "roam": True,
                 "initialTreeDepth": 10 if filter_active else 3, 
                 "expandAndCollapse": True,
                 "animationDuration": 550,
-                "animationDurationUpdate": 750
+                "animationDurationUpdate": 750,
+                "label": {
+                    "position": "insideLeft", # Forces text to the left side of the box
+                    "offset": [10, 0], # Adds a little padding from the left edge
+                    "rich": {
+                        # Defines the exact font styling for the name, role, and time period
+                        "name_style": {
+                            "fontSize": 12, 
+                            "fontWeight": "bold", 
+                            "color": "#ffffff", 
+                            "lineHeight": 18
+                        },
+                        "role_style": {
+                            "fontSize": 10, 
+                            "color": "#f8f9fa", 
+                            "lineHeight": 14
+                        },
+                        "time_style": {
+                            "fontSize": 9, 
+                            "color": "#e9ecef", 
+                            "lineHeight": 12
+                        }
+                    }
+                }
             }
         ]
     }
 
-    # Height is increased to accommodate the new vertical stacking
-    st_echarts(options=options, height="1400px", width="100%")
+    st_echarts(options=options, height="1400px", width=f"{required_width}px")
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

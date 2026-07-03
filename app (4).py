@@ -3,15 +3,13 @@ import pandas as pd
 from streamlit_echarts import st_echarts
 import re
 
-# 1. Page Configuration
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
 
-# 2. Pre-load your specific T&C Diagram Data
 if 'org_data' not in st.session_state:
     st.session_state.org_data = pd.DataFrame({
         'Name': [
-            'Eric Tan', 'Project-based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS', 
+            'Eric Tan', 'Project Based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS', 
             'ATC', 'ATC / ATS', 'ATS', 'CBI', 'Comms / DCS / RCS / Network', 'CSF', 'Signalling', 
             'Subcon', 'Train', 'Augustine', 'Eric', 'Helmi', 'TBC', 'Diyana', 'Teerapat', 'Erwin', 
             'Keri', 'Unal', 'YC (from DTL)', 'Aceline', 'YC', 'Zhonghan', 'Adib', 'Apurva', 'Jack', 
@@ -19,23 +17,23 @@ if 'org_data' not in st.session_state:
             'Sam', 'Sufian', 'Syafiq', 'Vincent', 'Zaki', 'Zul', 'Akmal', 'Irwan', 'Richter'
         ],
         'Role': [
-            'T&C Manager', 'Group', 'Group', 'Sub-Group', 'Sub-Group', 'Sub-Group', 
-            'Sub-Group', 'Sub-Group', 'Sub-Group', 'Sub-Group', 'Sub-Group', 'Sub-Group', 'Sub-Group', 
-            'Sub-Group', 'Sub-Group', 'OSIT Manager', 'T&C Engineer 2', 'ATS T&C Engineer 1', 'Mainline T&C Manager', 'T&C Coordinator', 'T&C Coordinator', 'ATC T&C Engineer 2', 
+            'T&C Manager', 'Group', 'Group', 'Sub Group', 'Sub Group', 'Sub Group', 
+            'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 'Sub Group', 
+            'Sub Group', 'Sub Group', 'OSIT Manager', 'T&C Engineer 2', 'ATS T&C Engineer 1', 'Mainline T&C Manager', 'T&C Coordinator', 'T&C Coordinator', 'ATC T&C Engineer 2', 
             'ATC T&C Engineer 1', 'ATC T&C Engineer 1', 'ATC T&C Engineer 1', 'ATC/ATS T&C Engineer 3', 'ATC/ATS T&C Engineer 1', 'ATS T&C Engineer 3', 'ATS T&C Engineer', 'ATS T&C Engineer 2', 'Sig T&C Engineer 2', 
             'ATS T&C Engineer 3', 'Comms T&C Engineer 3', 'RCS/Network Engineer', 'Sig T&C Engineer 1', 'Sig T&C Engineer 4', 'Subcon 4', 'Subcon 1', 'Subcon 1', 'Subcon 3', 
             'Subcon 2', 'Subcon 2', 'Subcon 4', 'Subcon 2', 'Subcon 1', 'Subcon 3', 'Subcon', 'Train Engineer 1', 'Train Engineer 2'
         ],
         'Time Period': [
-            'Feb-25 to Dec-29', '', '', '', '', '', 
+            'Feb 25 to Dec 29', '', '', '', '', '', 
             '', '', '', '', '', '', '', 
-            '', '', 'Jul-25 to Dec-35', 'Jun-26 to Jul-26', 'Oct-26 to Jun-28', '', 'May-25 to Dec-29', 'Jan-26 to Dec-26', 'Jan-26 to Oct-26', 
-            'Apr-26 to Nov-26', 'Jan-26 to Oct-26', 'Oct-27 to Dec-27', 'Dec-25 to Sep-28', 'Jan-27 to Sep-28', 'Aug-25 to Sep-28', 'Jul-26 to Sep-26', 'Apr-26 to Nov-26', 'Dec-25 to Sep-27', 
-            'Jul-26 to Jul-27', 'Aug-25 to Feb-27', 'Jun-26 to Jul-26', 'Aug-25 to Jul-27', 'Apr-26 to Nov-26', 'Aug-26 to Nov-26', 'Dec-25 to Sep-26', 'Oct-26 to Sep-28', 'Aug-26 to Nov-26', 
-            'Oct-26 to Sep-28', 'Aug-25 to Jul-27', 'Oct-26 to Dec-27', 'Dec-25 to Sep-26', 'Aug-25 to Jul-27', 'Oct-26 to Dec-27', '', 'Jan-26 to Dec-28', 'Jan-26 to Dec-28'
+            '', '', 'Jul 25 to Dec 35', 'Jun 26 to Jul 26', 'Oct 26 to Jun 28', '', 'May 25 to Dec 29', 'Jan 26 to Dec 26', 'Jan 26 to Oct 26', 
+            'Apr 26 to Nov 26', 'Jan 26 to Oct 26', 'Oct 27 to Dec 27', 'Dec 25 to Sep 28', 'Jan 27 to Sep 28', 'Aug 25 to Sep 28', 'Jul 26 to Sep 26', 'Apr 26 to Nov 26', 'Dec 25 to Sep 27', 
+            'Jul 26 to Jul 27', 'Aug 25 to Feb 27', 'Jun 26 to Jul 26', 'Aug 25 to Jul 27', 'Apr 26 to Nov 26', 'Aug 26 to Nov 26', 'Dec 25 to Sep 26', 'Oct 26 to Sep 28', 'Aug 26 to Nov 26', 
+            'Oct 26 to Sep 28', 'Aug 25 to Jul 27', 'Oct 26 to Dec 27', 'Dec 25 to Sep 26', 'Aug 25 to Jul 27', 'Oct 26 to Dec 27', '', 'Jan 26 to Dec 28', 'Jan 26 to Dec 28'
         ],
         'Department': [
-            'Management', 'Group', 'Group', 'Project-based', 'Project-based', 'Project-based', 
+            'Management', 'Group', 'Group', 'Project Based', 'Project Based', 'Project Based', 
             'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 
             'Shared Pool', 'Shared Pool', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
             'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS', 
@@ -43,7 +41,7 @@ if 'org_data' not in st.session_state:
             'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Train', 'Train'
         ],
         'Supervisor': [
-            'None', 'Eric Tan', 'Eric Tan', 'Project-based', 'Project-based', 'Project-based', 
+            'None', 'Eric Tan', 'Eric Tan', 'Project Based', 'Project Based', 'Project Based', 
             'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 
             'Shared T&C Pool', 'Shared T&C Pool', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC', 
             'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS', 
@@ -57,7 +55,6 @@ clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
 clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
 clean_df['Role Group'] = clean_df['Role'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
-# 3. Sidebar
 st.sidebar.header("🔍 View Options")
 filter_type = st.sidebar.radio(
     "Select a view:", 
@@ -79,7 +76,36 @@ elif filter_type == "Highlight by Department":
 
 filter_active = filter_type != "Show All (No Filters)"
 
-# 4. Data Editor
+st.sidebar.header("🎨 Customise Team Colors")
+default_palette = {
+    'Management': '#0081a7', 
+    'Group': '#00afb9',      
+    'Project Based': '#00afb9', 
+    'Shared Pool': '#00afb9', 
+    'CRL / OSIT': '#00afb9', 
+    'JRL Mainline': '#00afb9',
+    'RTS': '#00afb9', 
+    'ATC': '#00afb9', 
+    'ATC / ATS': '#00afb9',
+    'ATS': '#00afb9', 
+    'Comms / DCS / RCS / Network': '#00afb9',
+    'Signalling': '#00afb9', 
+    'Subcon': '#ffb703',     
+    'Train': '#00afb9'
+}
+
+color_map = {}
+with st.sidebar.expander("Click to change colors"):
+    for dept in sorted(clean_df['Department'].unique()):
+        default_c = default_palette.get(dept, '#ced4da')
+        color_map[dept] = st.color_picker(f"{dept}", default_c)
+
+st.sidebar.header("📐 Adjust Chart Spacing")
+st.sidebar.write("Use these sliders to pull the boxes closer together or push them apart.")
+with st.sidebar.expander("Layout Settings"):
+    chart_width = st.slider("Horizontal Width", 1000, 5000, 1800, 100)
+    chart_height = st.slider("Vertical Height", 500, 3000, 1000, 100)
+
 st.markdown("### ✏️ Edit Data Directly")
 edited_df = st.data_editor(
     st.session_state.org_data,
@@ -92,27 +118,8 @@ st.session_state.org_data = edited_df
 
 st.markdown("***")
 
-# 5. Build Chart
 if not clean_df.empty:
-    
-    # Palette matched to your uploaded screenshot
-    color_map = {
-        'Management': '#0081a7', # Dark Teal
-        'Group': '#00afb9',      # Standard Teal
-        'Project-based': '#00afb9', 
-        'Shared Pool': '#00afb9', 
-        'CRL / OSIT': '#00afb9', 
-        'JRL Mainline': '#00afb9',
-        'RTS': '#00afb9', 
-        'ATC': '#00afb9', 
-        'ATC / ATS': '#00afb9',
-        'ATS': '#00afb9', 
-        'Comms / DCS / RCS / Network': '#00afb9',
-        'Signalling': '#00afb9', 
-        'Subcon': '#ffb703',     # Yellow/Orange for External
-        'Train': '#00afb9'
-    }
-    default_color = '#ced4da' # Grey for TBA or unassigned
+    default_color = '#ced4da' 
 
     def build_tree(current_name, df, visited=None, real_supervisor=None):
         if visited is None:
@@ -150,15 +157,18 @@ if not clean_df.empty:
         
         if filter_active and not is_match:
             item_style = {"color": "#f8f9fa", "borderColor": "#ced4da", "borderWidth": 1}
+            display_text = f"{{name_faded|{current_name}}}"
+            if role not in ['Group', 'Sub Group']:
+                display_text += f"\n{{role_faded|{role}}}"
+            if time_period and str(time_period).strip() != '':
+                display_text += f"\n{{time_faded|{time_period}}}"
         else:
             item_style = {"color": node_color, "borderColor": node_color, "borderWidth": 1}
-
-        # RICH TEXT FORMATTING: This matches the left-aligned, multi-styled text in your image
-        display_text = f"{{name_style|{current_name}}}"
-        if role not in ['Group', 'Sub-Group']:
-            display_text += f"\n{{role_style|{role}}}"
-        if time_period and str(time_period).strip() != '':
-            display_text += f"\n{{time_style|{time_period}}}"
+            display_text = f"{{name_active|{current_name}}}"
+            if role not in ['Group', 'Sub Group']:
+                display_text += f"\n{{role_active|{role}}}"
+            if time_period and str(time_period).strip() != '':
+                display_text += f"\n{{time_active|{time_period}}}"
 
         tooltip_value = (
             f"<b>Name:</b> {current_name}<br/>"
@@ -176,7 +186,6 @@ if not clean_df.empty:
             "children": []
         }
 
-        # Vertical Stacking Logic for leaf nodes
         is_bottom_level = True
         for report in real_direct_reports:
             if not df[df['Supervisor'] == report].empty:
@@ -202,8 +211,6 @@ if not clean_df.empty:
     root_name = top_level_matches.iloc[0]['Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name']
     
     tree_data = build_tree(root_name, clean_df)
-
-    required_width = max(1200, len(clean_df) * 160) 
 
     options = {
         "tooltip": {
@@ -236,8 +243,8 @@ if not clean_df.empty:
                 "left": "2%",
                 "bottom": "5%",
                 "right": "2%",
-                "symbol": "rect", # Changed to sharp rectangles to match image
-                "symbolSize": [150, 60], # Adjusted box dimensions
+                "symbol": "rect", 
+                "symbolSize": [150, 60], 
                 "edgeShape": "polyline", 
                 "roam": True,
                 "initialTreeDepth": 10 if filter_active else 3, 
@@ -245,24 +252,39 @@ if not clean_df.empty:
                 "animationDuration": 550,
                 "animationDurationUpdate": 750,
                 "label": {
-                    "position": "insideLeft", # Forces text to the left side of the box
-                    "offset": [10, 0], # Adds a little padding from the left edge
+                    "position": "insideLeft", 
+                    "offset": [10, 0], 
                     "rich": {
-                        # Defines the exact font styling for the name, role, and time period
-                        "name_style": {
+                        "name_active": {
                             "fontSize": 12, 
                             "fontWeight": "bold", 
                             "color": "#ffffff", 
                             "lineHeight": 18
                         },
-                        "role_style": {
+                        "role_active": {
                             "fontSize": 10, 
                             "color": "#f8f9fa", 
                             "lineHeight": 14
                         },
-                        "time_style": {
+                        "time_active": {
                             "fontSize": 9, 
                             "color": "#e9ecef", 
+                            "lineHeight": 12
+                        },
+                        "name_faded": {
+                            "fontSize": 12, 
+                            "fontWeight": "bold", 
+                            "color": "#6c757d", 
+                            "lineHeight": 18
+                        },
+                        "role_faded": {
+                            "fontSize": 10, 
+                            "color": "#adb5bd", 
+                            "lineHeight": 14
+                        },
+                        "time_faded": {
+                            "fontSize": 9, 
+                            "color": "#ced4da", 
                             "lineHeight": 12
                         }
                     }
@@ -271,6 +293,6 @@ if not clean_df.empty:
         ]
     }
 
-    st_echarts(options=options, height="1400px", width=f"{required_width}px")
+    st_echarts(options=options, height=f"{chart_height}px", width=f"{chart_width}px")
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

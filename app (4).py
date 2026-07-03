@@ -2,10 +2,17 @@ import streamlit as st
 import pandas as pd
 from streamlit_echarts import st_echarts
 import re
+import os
+from datetime import datetime
 
+# =========================================================
 # 1. Page Configuration
+# =========================================================
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
+
+# Shared save file
+DATA_FILE = "org_data_saved.csv"
 
 # Make page wider and allow horizontal scrolling
 st.markdown(
@@ -34,7 +41,9 @@ st.markdown(
 )
 
 
+# =========================================================
 # 2. Helper Functions
+# =========================================================
 def parse_month_year(text, is_end=False):
     if pd.isna(text) or str(text).strip() == "":
         return pd.NaT
@@ -82,7 +91,6 @@ def wrap_text(text, box_width, font_size=10):
     if text == "":
         return ""
 
-    # Estimate characters per line based on box width
     max_chars = max(8, int((box_width - 20) / (font_size * 0.6)))
 
     words = text.split()
@@ -90,7 +98,6 @@ def wrap_text(text, box_width, font_size=10):
     current_line = ""
 
     for word in words:
-        # If the word itself is too long, split it
         if len(word) > max_chars:
             if current_line:
                 lines.append(current_line)
@@ -119,7 +126,54 @@ def safe_text(text):
     return str(text).replace("{", "(").replace("}", ")").replace("|", "/")
 
 
+def save_data(df):
+    save_df = df.copy()
+
+    if "Start Date" in save_df.columns:
+        save_df["Start Date"] = pd.to_datetime(
+            save_df["Start Date"],
+            errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+
+    if "End Date" in save_df.columns:
+        save_df["End Date"] = pd.to_datetime(
+            save_df["End Date"],
+            errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+
+    save_df.to_csv(DATA_FILE, index=False)
+
+
+def load_saved_data(default_df):
+    if os.path.exists(DATA_FILE):
+        try:
+            saved_df = pd.read_csv(DATA_FILE)
+
+            if "Start Date" in saved_df.columns:
+                saved_df["Start Date"] = pd.to_datetime(saved_df["Start Date"], errors="coerce")
+
+            if "End Date" in saved_df.columns:
+                saved_df["End Date"] = pd.to_datetime(saved_df["End Date"], errors="coerce")
+
+            return saved_df
+
+        except Exception as e:
+            st.warning(f"Could not load saved data. Using default data instead. Error: {e}")
+            return default_df.copy()
+
+    return default_df.copy()
+
+
+def get_last_saved_text():
+    if os.path.exists(DATA_FILE):
+        last_saved_time = datetime.fromtimestamp(os.path.getmtime(DATA_FILE))
+        return last_saved_time.strftime("%d %b %Y, %I:%M %p")
+    return "Not saved yet"
+
+
+# =========================================================
 # 3. Default Data
+# =========================================================
 default_data = pd.DataFrame({
     'Name / Team Name': [
         'Eric Tan', 'Project Based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS',
@@ -197,9 +251,11 @@ default_data['End Date'] = parsed_dates.apply(lambda x: x[1])
 default_data = default_data.drop(columns=['Time Period'])
 
 
+# =========================================================
 # 4. Initialise Session State
+# =========================================================
 if 'org_data' not in st.session_state:
-    st.session_state.org_data = default_data.copy()
+    st.session_state.org_data = load_saved_data(default_data)
 
 # If old session still has Time Period, convert it
 if 'Time Period' in st.session_state.org_data.columns:
@@ -231,7 +287,9 @@ for col, default_value in required_columns.items():
 st.session_state.org_data = st.session_state.org_data[list(required_columns.keys())]
 
 
+# =========================================================
 # 5. Clean Data Function
+# =========================================================
 def clean_org_data(df):
     clean_df = df.copy()
 
@@ -279,7 +337,9 @@ def clean_org_data(df):
     return clean_df
 
 
+# =========================================================
 # 6. Default Colour Palette
+# =========================================================
 default_palette = {
     'Management': '#0081a7',
     'Group': '#00afb9',
@@ -301,7 +361,9 @@ default_palette = {
 }
 
 
+# =========================================================
 # 7. Data Editor
+# =========================================================
 st.markdown("### ✏️ Edit Data Directly")
 st.write(
     "Click any cell to edit. For the dates, click the cell under *Start Date* or *End Date* "
@@ -357,12 +419,33 @@ edited_df = st.data_editor(
 )
 
 st.session_state.org_data = edited_df
+
+save_col, load_col, info_col = st.columns([1.2, 1.4, 4])
+
+with save_col:
+    if st.button("💾 Save Changes", use_container_width=True):
+        save_data(st.session_state.org_data)
+        st.success("Saved!")
+
+with load_col:
+    if st.button("🔄 Load Latest Saved Data", use_container_width=True):
+        st.session_state.org_data = load_saved_data(default_data)
+        st.rerun()
+
+with info_col:
+    st.caption(
+        f"Last saved: {get_last_saved_text()} | "
+        "This saved file is shared by everyone using this app link."
+    )
+
 clean_df = clean_org_data(st.session_state.org_data)
 
 st.markdown("***")
 
 
+# =========================================================
 # 8. Sidebar - View Options
+# =========================================================
 st.sidebar.header("🔍 View Options")
 
 filter_type = st.sidebar.radio(
@@ -407,7 +490,9 @@ elif filter_type == "Highlight by Color Group":
 filter_active = filter_type != "Show All (No Filters)"
 
 
+# =========================================================
 # 9. Sidebar - Custom Colours
+# =========================================================
 st.sidebar.header("🎨 Customise Team Colors")
 
 color_map = {}
@@ -418,7 +503,9 @@ with st.sidebar.expander("Click to change colors"):
         color_map[dept] = st.color_picker(f"{dept}", default_c)
 
 
+# =========================================================
 # 10. Sidebar - Spacing
+# =========================================================
 st.sidebar.header("📐 Adjust Chart Spacing")
 
 with st.sidebar.expander("Layout Settings"):
@@ -428,7 +515,9 @@ with st.sidebar.expander("Layout Settings"):
     box_height = st.slider("Box Height", 50, 220, 90, 5)
 
 
+# =========================================================
 # 11. Build and Render Chart
+# =========================================================
 if not clean_df.empty:
     default_color = '#ced4da'
 

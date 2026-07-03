@@ -192,6 +192,11 @@ if not clean_df.empty:
     
     tree_data = build_tree(root_name, clean_df)
 
+    # DYNAMIC WIDTH CALCULATION
+    # This prevents the top to bottom layout from overlapping by making the canvas physically wide enough to fit everyone side by side.
+    required_width = max(1200, len(clean_df) * 180) 
+    dynamic_width_string = f"{required_width}px"
+
     options = {
         "tooltip": {
             "trigger": "item",
@@ -204,21 +209,22 @@ if not clean_df.empty:
         },
         "toolbox": {
             "feature": {
-                "saveAsImage": {"name": "TC_Org_Chart", "title": "Save as PNG"}
+                # pixelRatio 3 ensures the downloaded image is very high resolution for A3 printing
+                "saveAsImage": {"name": "TC_Org_Chart", "title": "Save as PNG", "pixelRatio": 3} 
             }
         },
         "series": [
             {
                 "type": "tree",
                 "data": [tree_data],
-                "orient": "LR", # Left to Right layout allows for vertical stacking
-                "top": "2%",
-                "left": "10%",
-                "bottom": "2%",
-                "right": "20%",
+                "orient": "TB", # Restored top to bottom layout
+                "top": "5%",
+                "left": "2%",
+                "bottom": "5%",
+                "right": "2%",
                 "symbol": "roundRect",
                 "symbolSize": [160, 65],
-                "edgeShape": "polyline",
+                "edgeShape": "polyline", # Straight connecting lines
                 "roam": True,
                 "initialTreeDepth": 10 if filter_active else 2, 
                 "expandAndCollapse": True,
@@ -228,7 +234,7 @@ if not clean_df.empty:
         ]
     }
 
-    # Increased height significantly to accommodate the vertical stacking without squishing
-    st_echarts(options=options, height="1200px", width="100%")
+    # Pass the massive dynamic width to the chart container
+    st_echarts(options=options, height="900px", width=dynamic_width_string)
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

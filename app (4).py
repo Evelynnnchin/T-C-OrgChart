@@ -76,6 +76,49 @@ def format_period(start_date, end_date):
         return ""
 
 
+def wrap_text(text, box_width, font_size=10):
+    text = str(text).strip()
+
+    if text == "":
+        return ""
+
+    # Estimate characters per line based on box width
+    max_chars = max(8, int((box_width - 20) / (font_size * 0.6)))
+
+    words = text.split()
+    lines = []
+    current_line = ""
+
+    for word in words:
+        # If the word itself is too long, split it
+        if len(word) > max_chars:
+            if current_line:
+                lines.append(current_line)
+                current_line = ""
+
+            for i in range(0, len(word), max_chars):
+                lines.append(word[i:i + max_chars])
+
+        else:
+            test_line = f"{current_line} {word}".strip()
+
+            if len(test_line) <= max_chars:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+
+    if current_line:
+        lines.append(current_line)
+
+    return "\n".join(lines)
+
+
+def safe_text(text):
+    return str(text).replace("{", "(").replace("}", ")").replace("|", "/")
+
+
 # 3. Default Data
 default_data = pd.DataFrame({
     'Name / Team Name': [
@@ -381,13 +424,49 @@ st.sidebar.header("📐 Adjust Chart Spacing")
 with st.sidebar.expander("Layout Settings"):
     chart_width = st.slider("Horizontal Width", 1500, 12000, 5000, 100)
     chart_height = st.slider("Vertical Height", 700, 5000, 1800, 100)
-    box_width = st.slider("Box Width", 120, 300, 170, 10)
-    box_height = st.slider("Box Height", 50, 120, 65, 5)
+    box_width = st.slider("Box Width", 100, 350, 170, 10)
+    box_height = st.slider("Box Height", 50, 220, 90, 5)
 
 
 # 11. Build and Render Chart
 if not clean_df.empty:
     default_color = '#ced4da'
+
+    def build_styled_text(name, role, time_period, entry_type, is_faded):
+        wrapped_name = wrap_text(safe_text(name), box_width, font_size=12)
+        wrapped_role = wrap_text(safe_text(role), box_width, font_size=10)
+        wrapped_time = wrap_text(safe_text(time_period), box_width, font_size=9)
+
+        if is_faded:
+            name_style = "name_faded"
+            role_style = "role_faded"
+            time_style = "time_faded"
+        else:
+            name_style = "name_active"
+            role_style = "role_active"
+            time_style = "time_active"
+
+        display_text = "\n".join([
+            f"{{{name_style}|{line}}}"
+            for line in wrapped_name.split("\n")
+            if line.strip() != ""
+        ])
+
+        if entry_type == 'Person' and str(role).strip() != "":
+            display_text += "\n" + "\n".join([
+                f"{{{role_style}|{line}}}"
+                for line in wrapped_role.split("\n")
+                if line.strip() != ""
+            ])
+
+        if str(time_period).strip() != "":
+            display_text += "\n" + "\n".join([
+                f"{{{time_style}|{line}}}"
+                for line in wrapped_time.split("\n")
+                if line.strip() != ""
+            ])
+
+        return display_text
 
     def build_tree(current_name, df, visited=None, real_supervisor=None):
         if visited is None:
@@ -435,14 +514,13 @@ if not clean_df.empty:
                 "borderColor": "#ced4da",
                 "borderWidth": 1
             }
-
-            display_text = f"{{name_faded|{current_name}}}"
-
-            if entry_type == 'Person' and str(role).strip() != '':
-                display_text += f"\n{{role_faded|{role}}}"
-
-            if str(time_period).strip() != '':
-                display_text += f"\n{{time_faded|{time_period}}}"
+            display_text = build_styled_text(
+                current_name,
+                role,
+                time_period,
+                entry_type,
+                is_faded=True
+            )
 
         else:
             item_style = {
@@ -450,14 +528,13 @@ if not clean_df.empty:
                 "borderColor": node_color,
                 "borderWidth": 1
             }
-
-            display_text = f"{{name_active|{current_name}}}"
-
-            if entry_type == 'Person' and str(role).strip() != '':
-                display_text += f"\n{{role_active|{role}}}"
-
-            if str(time_period).strip() != '':
-                display_text += f"\n{{time_active|{time_period}}}"
+            display_text = build_styled_text(
+                current_name,
+                role,
+                time_period,
+                entry_type,
+                is_faded=False
+            )
 
         tooltip_value = (
             f"<b>Name / Team:</b> {current_name}<br/>"
@@ -553,18 +630,18 @@ if not clean_df.empty:
                 "animationDurationUpdate": 750,
                 "label": {
                     "position": "insideLeft",
-                    "offset": [10, 0],
+                    "offset": [8, 0],
                     "rich": {
                         "name_active": {
                             "fontSize": 12,
                             "fontWeight": "bold",
                             "color": "#ffffff",
-                            "lineHeight": 18
+                            "lineHeight": 15
                         },
                         "role_active": {
                             "fontSize": 10,
                             "color": "#f8f9fa",
-                            "lineHeight": 14
+                            "lineHeight": 13
                         },
                         "time_active": {
                             "fontSize": 9,
@@ -575,12 +652,12 @@ if not clean_df.empty:
                             "fontSize": 12,
                             "fontWeight": "bold",
                             "color": "#6c757d",
-                            "lineHeight": 18
+                            "lineHeight": 15
                         },
                         "role_faded": {
                             "fontSize": 10,
                             "color": "#adb5bd",
-                            "lineHeight": 14
+                            "lineHeight": 13
                         },
                         "time_faded": {
                             "fontSize": 9,

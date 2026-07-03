@@ -15,15 +15,36 @@ st.title("🏢 Editable T&C Organizational Chart")
 DATA_FILE = "org_data_saved.csv"
 SG_TIMEZONE = ZoneInfo("Asia/Singapore")
 
+# Wider page + wider sidebar so color picker is not cut off
 st.markdown(
     """
     <style>
+    /* Make main page full width */
     .block-container {
         max-width: 100% !important;
         padding-left: 0.5rem !important;
         padding-right: 0.5rem !important;
     }
 
+    /* Make sidebar wider so color picker is not cut off */
+    section[data-testid="stSidebar"] {
+        min-width: 420px !important;
+        width: 420px !important;
+        overflow: visible !important;
+    }
+
+    section[data-testid="stSidebar"] > div {
+        min-width: 420px !important;
+        width: 420px !important;
+        overflow: visible !important;
+    }
+
+    /* Make color picker popover appear above everything */
+    div[data-baseweb="popover"] {
+        z-index: 999999 !important;
+    }
+
+    /* Allow main content / chart to scroll horizontally */
     div[data-testid="stVerticalBlock"] {
         overflow-x: auto !important;
     }

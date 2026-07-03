@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from streamlit_echarts import st_echarts
+import re # Added to clean up role names
 
 # 1. Page Configuration
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
@@ -51,21 +52,34 @@ if 'org_data' not in st.session_state:
         ]
     })
 
-# 3. Sidebar for Search and Filters
-st.sidebar.header("🔍 Search & Filter")
-all_names = sorted(st.session_state.org_data['Name'].dropna().unique().tolist())
-all_roles = sorted(st.session_state.org_data['Role'].dropna().unique().tolist())
-all_depts = sorted(st.session_state.org_data['Department'].dropna().unique().tolist())
+# Dynamically clean the data 
+clean_df = st.session_state.org_data.dropna(subset=['Name']).copy()
+clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
+clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
+# Removes trailing numbers (e.g. "Subcon 1" becomes "Subcon")
+clean_df['Role Group'] = clean_df['Role'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
-search_mode = st.sidebar.radio("Search by:", ["Name", "Role"])
-if search_mode == "Name":
-    selected_person = st.sidebar.selectbox("Select Employee:", ["All"] + all_names)
-    selected_role = "All"
-else:
-    selected_role = st.sidebar.selectbox("Select Role:", ["All"] + all_roles)
-    selected_person = "All"
+# 3. Sidebar for Highlighting and Focus
+st.sidebar.header("🔍 Highlight & Focus")
+st.sidebar.write("Select a filter below to highlight specific teams or roles while keeping the organizational structure intact.")
 
-selected_dept = st.sidebar.selectbox("Filter by Department:", ["All"] + all_depts)
+filter_type = st.sidebar.radio("Highlight by:", ["None", "Name", "Role Group", "Department"])
+
+selected_person = "All"
+selected_role_group = "All"
+selected_dept = "All"
+
+if filter_type == "Name":
+    all_names = sorted(clean_df['Name'].unique().tolist())
+    selected_person = st.sidebar.selectbox("Select Name:", all_names)
+elif filter_type == "Role Group":
+    all_role_groups = sorted(clean_df['Role Group'].unique().tolist())
+    selected_role_group = st.sidebar.selectbox("Select Role Group:", all_role_groups)
+elif filter_type == "Department":
+    all_depts = sorted(clean_df['Department'].unique().tolist())
+    selected_dept = st.sidebar.selectbox("Select Department:", all_depts)
+
+filter_active = filter_type != "None"
 
 # 4. Direct Editor Table
 st.markdown("### ✏️ Edit Data Directly")
@@ -76,33 +90,20 @@ edited_df = st.data_editor(
     hide_index=True,
     height=250
 )
-
-# Clean the edited data
-clean_df = edited_df.dropna(subset=['Name']).copy()
-clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
-clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
+# Update session state with edits
+st.session_state.org_data = edited_df
 
 st.markdown("***")
 
 # 5. Build and Render Chart
 if not clean_df.empty:
     
-    # Custom Color Coding matching your T&C setup
     color_map = {
-        'Management': '#d9534f',
-        'Group': '#34495e',
-        'Project-based': '#9b59b6',
-        'Shared Pool': '#f39c12',
-        'CRL / OSIT': '#2980b9',
-        'JRL Mainline': '#27ae60',
-        'RTS': '#16a085',
-        'ATC': '#8e44ad',
-        'ATC / ATS': '#c0392b',
-        'ATS': '#e67e22',
-        'Comms / DCS / RCS / Network': '#f1c40f',
-        'Signalling': '#d35400',
-        'Subcon': '#7f8c8d',
-        'Train': '#2c3e50'
+        'Management': '#d9534f', 'Group': '#34495e', 'Project-based': '#9b59b6',
+        'Shared Pool': '#f39c12', 'CRL / OSIT': '#2980b9', 'JRL Mainline': '#27ae60',
+        'RTS': '#16a085', 'ATC': '#8e44ad', 'ATC / ATS': '#c0392b',
+        'ATS': '#e67e22', 'Comms / DCS / RCS / Network': '#f1c40f',
+        'Signalling': '#d35400', 'Subcon': '#7f8c8d', 'Train': '#2c3e50'
     }
     default_color = '#bdc3c7'
 
@@ -120,6 +121,7 @@ if not clean_df.empty:
         
         person = person_data.iloc[0]
         role = person.get('Role', 'N/A')
+        role_group = person.get('Role Group', 'N/A')
         time_period = person.get('Time Period', '')
         dept = person.get('Department', 'N/A')
         supervisor = person.get('Supervisor', 'None')
@@ -127,14 +129,34 @@ if not clean_df.empty:
         direct_reports = df[df['Supervisor'] == current_name]['Name'].tolist()
         reports_str = ", ".join(direct_reports) if direct_reports else "None"
         
-        # Build the multi-line text to display INSIDE the box
+        # Check if this node matches the active filter
+        is_match = True
+        if filter_active:
+            if filter_type == "Name" and current_name != selected_person:
+                is_match = False
+            elif filter_type == "Role Group" and role_group != selected_role_group:
+                is_match = False
+            elif filter_type == "Department" and dept != selected_dept:
+                is_match = False
+
+        # Visual Styling based on filter match
+        node_color = color_map.get(dept, default_color)
+        
+        if filter_active and not is_match:
+            # Faded state
+            item_style = {"color": "#f8f9fa", "borderColor": "#ced4da", "borderWidth": 1}
+            label_style = {"color": "#aab7c4", "fontWeight": "normal", "position": "inside", "verticalAlign": "middle", "align": "center", "fontSize": 11, "lineHeight": 16}
+        else:
+            # Normal or Highlighted state
+            item_style = {"color": node_color, "borderColor": node_color, "borderWidth": 2}
+            label_style = {"color": "white", "fontWeight": "bold", "position": "inside", "verticalAlign": "middle", "align": "center", "fontSize": 11, "lineHeight": 16}
+
         display_text = f"{current_name}"
         if role not in ['Group', 'Sub-Group']:
             display_text += f"\n{role}"
         if time_period and str(time_period).strip() != '':
             display_text += f"\n{time_period}"
 
-        # HTML formatted tooltip for when you click the box
         tooltip_value = (
             f"<b>Name:</b> {current_name}<br/>"
             f"<b>Role:</b> {role}<br/>"
@@ -147,7 +169,8 @@ if not clean_df.empty:
         node = {
             "name": display_text,
             "value": tooltip_value,
-            "itemStyle": {"color": color_map.get(dept, default_color)},
+            "itemStyle": item_style,
+            "label": label_style,
             "children": []
         }
 
@@ -158,21 +181,10 @@ if not clean_df.empty:
 
         return node
 
-    # Apply Sidebar Filters to find the top of the tree
+    # Keep the root anchored at the top of the company so the tree shape never breaks
     top_level_matches = clean_df[clean_df['Supervisor'].str.lower() == 'none']
-    top_level_person = top_level_matches.iloc[0]['Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name']
-
-    if selected_person != "All":
-        root_name = selected_person
-    elif selected_dept != "All":
-        dept_people = clean_df[clean_df['Department'] == selected_dept]
-        root_name = dept_people.iloc[0]['Name'] if not dept_people.empty else top_level_person
-    elif selected_role != "All":
-        role_people = clean_df[clean_df['Role'] == selected_role]
-        root_name = role_people.iloc[0]['Name'] if not role_people.empty else top_level_person
-    else:
-        root_name = top_level_person
-
+    root_name = top_level_matches.iloc[0]['Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name']
+    
     tree_data = build_tree(root_name, clean_df)
 
     options = {
@@ -194,25 +206,17 @@ if not clean_df.empty:
             {
                 "type": "tree",
                 "data": [tree_data],
-                "orient": "TB", # Top to bottom
+                "orient": "TB",
                 "top": "5%",
-                "left": "5%",
+                "left": "2%",
                 "bottom": "5%",
-                "right": "5%",
-                "symbol": "roundRect", # Box shape
+                "right": "2%",
+                "symbol": "roundRect",
                 "symbolSize": [160, 65],
-                "edgeShape": "polyline", # Straight right-angle lines
+                "edgeShape": "polyline",
                 "roam": True,
-                "initialTreeDepth": 3, 
-                "label": {
-                    "position": "inside",
-                    "verticalAlign": "middle",
-                    "align": "center",
-                    "fontSize": 11,
-                    "color": "white",
-                    "lineHeight": 16,
-                    "fontWeight": "bold"
-                },
+                # If a filter is applied, expand the tree fully to show the results. Otherwise, collapse slightly.
+                "initialTreeDepth": 10 if filter_active else 2, 
                 "expandAndCollapse": True,
                 "animationDuration": 550,
                 "animationDurationUpdate": 750
@@ -220,6 +224,6 @@ if not clean_df.empty:
         ]
     }
 
-    st_echarts(options=options, height="850px")
+    st_echarts(options=options, height="900px", width="5000px")
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

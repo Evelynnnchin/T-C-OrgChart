@@ -7,7 +7,50 @@ import re
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
 
-# 2. Default Data
+
+# 2. Helper Functions
+def parse_month_year(text, is_end=False):
+    if pd.isna(text) or str(text).strip() == "":
+        return pd.NaT
+
+    dt = pd.to_datetime("01 " + str(text).strip(), format="%d %b %y", errors="coerce")
+
+    if pd.notna(dt) and is_end:
+        dt = dt + pd.offsets.MonthEnd(0)
+
+    return dt
+
+
+def parse_time_period(period):
+    if pd.isna(period) or str(period).strip() == "":
+        return pd.NaT, pd.NaT
+
+    parts = str(period).split(" to ")
+
+    if len(parts) != 2:
+        return pd.NaT, pd.NaT
+
+    start_date = parse_month_year(parts[0], is_end=False)
+    end_date = parse_month_year(parts[1], is_end=True)
+
+    return start_date, end_date
+
+
+def format_period(start_date, end_date):
+    start_date = pd.to_datetime(start_date, errors="coerce")
+    end_date = pd.to_datetime(end_date, errors="coerce")
+
+    if pd.notna(start_date) and pd.notna(end_date):
+        return f"{start_date.strftime('%b %y')} to {end_date.strftime('%b %y')}"
+    elif pd.notna(start_date):
+        return f"From {start_date.strftime('%b %y')}"
+    elif pd.notna(end_date):
+        return f"Until {end_date.strftime('%b %y')}"
+    else:
+        return ""
+
+
+# 3. Default Data
 default_data = pd.DataFrame({
     'Name / Team Name': [
         'Eric Tan', 'Project Based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS',
@@ -78,18 +121,38 @@ default_data = pd.DataFrame({
     ]
 })
 
-# 3. Initialise Session State
+# Convert old Time Period text into calendar date columns
+parsed_dates = default_data['Time Period'].apply(parse_time_period)
+default_data['Start Date'] = parsed_dates.apply(lambda x: x[0])
+default_data['End Date'] = parsed_dates.apply(lambda x: x[1])
+default_data = default_data.drop(columns=['Time Period'])
+
+
+# 4. Initialise Session State
 if 'org_data' not in st.session_state:
     st.session_state.org_data = default_data.copy()
 
-# Protect against old Streamlit sessions missing columns
+# If old session still has Time Period, convert it
+if 'Time Period' in st.session_state.org_data.columns:
+    parsed_dates = st.session_state.org_data['Time Period'].apply(parse_time_period)
+
+    if 'Start Date' not in st.session_state.org_data.columns:
+        st.session_state.org_data['Start Date'] = parsed_dates.apply(lambda x: x[0])
+
+    if 'End Date' not in st.session_state.org_data.columns:
+        st.session_state.org_data['End Date'] = parsed_dates.apply(lambda x: x[1])
+
+    st.session_state.org_data = st.session_state.org_data.drop(columns=['Time Period'])
+
+# Protect against missing columns
 required_columns = {
     'Name / Team Name': '',
     'Type': 'Person',
     'Job Title': '',
     'Reports To': 'None',
     'Color Group': 'Group',
-    'Time Period': ''
+    'Start Date': pd.NaT,
+    'End Date': pd.NaT
 }
 
 for col, default_value in required_columns.items():
@@ -98,7 +161,8 @@ for col, default_value in required_columns.items():
 
 st.session_state.org_data = st.session_state.org_data[list(required_columns.keys())]
 
-# 4. Helper Function to Clean Data
+
+# 5. Clean Data Function
 def clean_org_data(df):
     clean_df = df.copy()
 
@@ -123,7 +187,6 @@ def clean_org_data(df):
         .replace('', 'None')
     )
 
-    # IMPORTANT FIX: prevents NoneType vs string sorting error
     clean_df['Color Group'] = (
         clean_df['Color Group']
         .fillna('Group')
@@ -132,7 +195,13 @@ def clean_org_data(df):
         .replace(['', 'None', 'nan', 'NaN'], 'Group')
     )
 
-    clean_df['Time Period'] = clean_df['Time Period'].fillna('').astype(str).str.strip()
+    clean_df['Start Date'] = pd.to_datetime(clean_df['Start Date'], errors='coerce')
+    clean_df['End Date'] = pd.to_datetime(clean_df['End Date'], errors='coerce')
+
+    clean_df['Time Period'] = clean_df.apply(
+        lambda row: format_period(row['Start Date'], row['End Date']),
+        axis=1
+    )
 
     clean_df['Role Group'] = clean_df['Job Title'].apply(
         lambda x: re.sub(r'\s*\d+$', '', str(x)).strip()
@@ -140,7 +209,8 @@ def clean_org_data(df):
 
     return clean_df
 
-# 5. Default Colour Palette
+
+# 6. Default Colour Palette
 default_palette = {
     'Management': '#0081a7',
     'Group': '#00afb9',
@@ -161,11 +231,12 @@ default_palette = {
     'Train': '#00afb9'
 }
 
-# 6. Data Editor
+
+# 7. Data Editor
 st.markdown("### ✏️ Edit Data Directly")
 st.write(
-    "Click any cell to edit. Scroll to the bottom row to add a new person. "
-    "Use *Reports To* to decide where the person or team box sits."
+    "Click any cell to edit. For the dates, click the cell under *Start Date* or *End Date* "
+    "and choose from the calendar dropdown."
 )
 
 temp_clean_df = clean_org_data(st.session_state.org_data)
@@ -203,8 +274,15 @@ edited_df = st.data_editor(
             options=list(default_palette.keys()),
             required=True
         ),
-        "Time Period": st.column_config.TextColumn(
-            "Time Period"
+        "Start Date": st.column_config.DateColumn(
+            "Start Date",
+            help="Choose the start date from the calendar.",
+            format="DD MMM YYYY"
+        ),
+        "End Date": st.column_config.DateColumn(
+            "End Date",
+            help="Choose the end date from the calendar.",
+            format="DD MMM YYYY"
         )
     }
 )
@@ -214,7 +292,8 @@ clean_df = clean_org_data(st.session_state.org_data)
 
 st.markdown("***")
 
-# 7. Sidebar - View Options
+
+# 8. Sidebar - View Options
 st.sidebar.header("🔍 View Options")
 
 filter_type = st.sidebar.radio(
@@ -258,7 +337,8 @@ elif filter_type == "Highlight by Color Group":
 
 filter_active = filter_type != "Show All (No Filters)"
 
-# 8. Sidebar - Custom Colours
+
+# 9. Sidebar - Custom Colours
 st.sidebar.header("🎨 Customise Team Colors")
 
 color_map = {}
@@ -268,14 +348,16 @@ with st.sidebar.expander("Click to change colors"):
         default_c = default_palette.get(dept, '#ced4da')
         color_map[dept] = st.color_picker(f"{dept}", default_c)
 
-# 9. Sidebar - Spacing
+
+# 10. Sidebar - Spacing
 st.sidebar.header("📐 Adjust Chart Spacing")
 
 with st.sidebar.expander("Layout Settings"):
     chart_width = st.slider("Horizontal Width", 1000, 5000, 1800, 100)
     chart_height = st.slider("Vertical Height", 500, 3000, 1000, 100)
 
-# 10. Build and Render Chart
+
+# 11. Build and Render Chart
 if not clean_df.empty:
     default_color = '#ced4da'
 
@@ -365,7 +447,6 @@ if not clean_df.empty:
             "children": []
         }
 
-        # Check whether this is the bottom level
         is_bottom_level = True
 
         for report in real_direct_reports:
@@ -373,7 +454,6 @@ if not clean_df.empty:
                 is_bottom_level = False
                 break
 
-        # Vertical stacking logic for bottom-level nodes
         if is_bottom_level and len(real_direct_reports) > 0:
             current_chain_link = node
 
@@ -393,7 +473,6 @@ if not clean_df.empty:
 
         return node
 
-    # Find top-level root
     top_level_matches = clean_df[clean_df['Reports To'].str.lower() == 'none']
 
     if not top_level_matches.empty:
@@ -495,7 +574,8 @@ if not clean_df.empty:
 else:
     st.warning("The table is empty. Please add at least one person or team box to generate the chart.")
 
-# 11. Optional Reset Button
+
+# 12. Reset Button
 st.markdown("***")
 
 if st.button("Reset to Default Data"):

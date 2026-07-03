@@ -56,35 +56,34 @@ if 'org_data' not in st.session_state:
 clean_df = st.session_state.org_data.dropna(subset=['Name']).copy()
 clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
 clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
-# Removes trailing numbers to create clean Role Groups
 clean_df['Role Group'] = clean_df['Role'].apply(lambda x: re.sub(r'\s*\d+$', '', str(x)).strip())
 
 # 3. Sidebar for Highlighting and Focus
-st.sidebar.header("🔍 Highlight & Focus")
-st.sidebar.write("Select a filter below to highlight specific teams or roles.")
+st.sidebar.header("🔍 View Options")
+st.sidebar.write("Choose to see the full colored chart, or highlight specific teams.")
 
-filter_type = st.sidebar.radio("Highlight by:", ["None", "Name", "Role Group", "Department"])
+filter_type = st.sidebar.radio(
+    "Select a view:", 
+    ["Show All (No Filters)", "Highlight by Name", "Highlight by Role Group", "Highlight by Department"]
+)
 
 selected_person = "All"
 selected_role_group = "All"
 selected_dept = "All"
 
-if filter_type == "Name":
+if filter_type == "Highlight by Name":
     all_names = sorted(clean_df['Name'].unique().tolist())
     selected_person = st.sidebar.selectbox("Select Name:", all_names)
-elif filter_type == "Role Group":
+elif filter_type == "Highlight by Role Group":
     all_role_groups = sorted(clean_df['Role Group'].unique().tolist())
     selected_role_group = st.sidebar.selectbox("Select Role Group:", all_role_groups)
-    
-    # Calculate and display the count for the selected role group
     role_count = len(clean_df[clean_df['Role Group'] == selected_role_group])
     st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
-    
-elif filter_type == "Department":
+elif filter_type == "Highlight by Department":
     all_depts = sorted(clean_df['Department'].unique().tolist())
     selected_dept = st.sidebar.selectbox("Select Department:", all_depts)
 
-filter_active = filter_type != "None"
+filter_active = filter_type != "Show All (No Filters)"
 
 # 4. Direct Editor Table
 st.markdown("### ✏️ Edit Data Directly")
@@ -95,7 +94,6 @@ edited_df = st.data_editor(
     hide_index=True,
     height=250
 )
-# Update session state with edits
 st.session_state.org_data = edited_df
 
 st.markdown("***")
@@ -112,7 +110,7 @@ if not clean_df.empty:
     }
     default_color = '#bdc3c7'
 
-    def build_tree(current_name, df, visited=None):
+    def build_tree(current_name, df, visited=None, real_supervisor=None):
         if visited is None:
             visited = set()
         
@@ -129,30 +127,30 @@ if not clean_df.empty:
         role_group = person.get('Role Group', 'N/A')
         time_period = person.get('Time Period', '')
         dept = person.get('Department', 'N/A')
-        supervisor = person.get('Supervisor', 'None')
         
-        direct_reports = df[df['Supervisor'] == current_name]['Name'].tolist()
-        reports_str = ", ".join(direct_reports) if direct_reports else "None"
+        # Use the real supervisor if this node was stacked vertically
+        actual_supervisor = person.get('Supervisor', 'None')
+        display_supervisor = real_supervisor if real_supervisor else actual_supervisor
         
-        # Check if this node matches the active filter
+        # Look up REAL direct reports from the dataframe
+        real_direct_reports = df[df['Supervisor'] == current_name]['Name'].tolist()
+        reports_str = ", ".join(real_direct_reports) if real_direct_reports else "None"
+        
         is_match = True
         if filter_active:
-            if filter_type == "Name" and current_name != selected_person:
+            if filter_type == "Highlight by Name" and current_name != selected_person:
                 is_match = False
-            elif filter_type == "Role Group" and role_group != selected_role_group:
+            elif filter_type == "Highlight by Role Group" and role_group != selected_role_group:
                 is_match = False
-            elif filter_type == "Department" and dept != selected_dept:
+            elif filter_type == "Highlight by Department" and dept != selected_dept:
                 is_match = False
 
-        # Visual Styling based on filter match
         node_color = color_map.get(dept, default_color)
         
         if filter_active and not is_match:
-            # Faded state
             item_style = {"color": "#f8f9fa", "borderColor": "#ced4da", "borderWidth": 1}
             label_style = {"color": "#aab7c4", "fontWeight": "normal", "position": "inside", "verticalAlign": "middle", "align": "center", "fontSize": 11, "lineHeight": 16}
         else:
-            # Normal or Highlighted state
             item_style = {"color": node_color, "borderColor": node_color, "borderWidth": 2}
             label_style = {"color": "white", "fontWeight": "bold", "position": "inside", "verticalAlign": "middle", "align": "center", "fontSize": 11, "lineHeight": 16}
 
@@ -167,8 +165,8 @@ if not clean_df.empty:
             f"<b>Role:</b> {role}<br/>"
             f"<b>Department:</b> {dept}<br/>"
             f"<b>Time Period:</b> {time_period if str(time_period).strip() != '' else 'N/A'}<br/>"
-            f"<b>Supervisor:</b> {supervisor}<br/>"
-            f"<b>Direct Reports ({len(direct_reports)}):</b> {reports_str}"
+            f"<b>Supervisor:</b> {display_supervisor}<br/>"
+            f"<b>Direct Reports ({len(real_direct_reports)}):</b> {reports_str}"
         )
 
         node = {
@@ -179,23 +177,36 @@ if not clean_df.empty:
             "children": []
         }
 
-        for report in direct_reports:
-            child_node = build_tree(report, df, visited)
-            if child_node:
-                node["children"].append(child_node)
+        # MAGIC TRICK FOR VERTICAL STACKING AT THE BOTTOM
+        # Check if all reports under this person have zero reports of their own
+        is_bottom_level = True
+        for report in real_direct_reports:
+            report_has_children = not df[df['Supervisor'] == report].empty
+            if report_has_children:
+                is_bottom_level = False
+                break
+
+        if is_bottom_level and len(real_direct_reports) > 0:
+            # If they are bottom level, link them in a vertical visual chain
+            current_chain_link = node
+            for report in real_direct_reports:
+                child_node = build_tree(report, df, visited, real_supervisor=current_name)
+                if child_node:
+                    current_chain_link["children"].append(child_node)
+                    current_chain_link = child_node
+        else:
+            # Otherwise, spread them out horizontally as normal
+            for report in real_direct_reports:
+                child_node = build_tree(report, df, visited)
+                if child_node:
+                    node["children"].append(child_node)
 
         return node
 
-    # Keep the root anchored at the top of the company so the tree shape never breaks
     top_level_matches = clean_df[clean_df['Supervisor'].str.lower() == 'none']
     root_name = top_level_matches.iloc[0]['Name'] if not top_level_matches.empty else clean_df.iloc[0]['Name']
     
     tree_data = build_tree(root_name, clean_df)
-
-    # DYNAMIC WIDTH CALCULATION
-    # This prevents the top to bottom layout from overlapping by making the canvas physically wide enough to fit everyone side by side.
-    required_width = max(1200, len(clean_df) * 180) 
-    dynamic_width_string = f"{required_width}px"
 
     options = {
         "tooltip": {
@@ -208,16 +219,22 @@ if not clean_df.empty:
             "textStyle": {"color": "#333"}
         },
         "toolbox": {
+            "show": True,
+            "right": "30px",
+            "top": "15px",
             "feature": {
-                # pixelRatio 3 ensures the downloaded image is very high resolution for A3 printing
-                "saveAsImage": {"name": "TC_Org_Chart", "title": "Save as PNG", "pixelRatio": 3} 
+                "saveAsImage": {
+                    "name": "TC_Org_Chart", 
+                    "title": "Download as PNG", 
+                    "pixelRatio": 3 # Forces extremely high resolution for crisp A3 printing
+                }
             }
         },
         "series": [
             {
                 "type": "tree",
                 "data": [tree_data],
-                "orient": "TB", # Restored top to bottom layout
+                "orient": "TB", # Restored perfectly to Top-Down
                 "top": "5%",
                 "left": "2%",
                 "bottom": "5%",
@@ -226,7 +243,7 @@ if not clean_df.empty:
                 "symbolSize": [160, 65],
                 "edgeShape": "polyline", # Straight connecting lines
                 "roam": True,
-                "initialTreeDepth": 10 if filter_active else 2, 
+                "initialTreeDepth": 10 if filter_active else 3, 
                 "expandAndCollapse": True,
                 "animationDuration": 550,
                 "animationDurationUpdate": 750
@@ -234,7 +251,7 @@ if not clean_df.empty:
         ]
     }
 
-    # Pass the massive dynamic width to the chart container
-    st_echarts(options=options, height="900px", width=dynamic_width_string)
+    # Height is increased to accommodate the new vertical stacking
+    st_echarts(options=options, height="1400px", width="100%")
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

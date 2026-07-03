@@ -4,6 +4,7 @@ from streamlit_echarts import st_echarts
 import re
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # =========================================================
 # 1. Page Configuration
@@ -11,10 +12,9 @@ from datetime import datetime
 st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
 st.title("🏢 Editable T&C Organizational Chart")
 
-# Shared save file
 DATA_FILE = "org_data_saved.csv"
+SG_TIMEZONE = ZoneInfo("Asia/Singapore")
 
-# Make page wider and allow horizontal scrolling
 st.markdown(
     """
     <style>
@@ -129,6 +129,9 @@ def safe_text(text):
 def save_data(df):
     save_df = df.copy()
 
+    if "Delete?" in save_df.columns:
+        save_df = save_df.drop(columns=["Delete?"])
+
     if "Start Date" in save_df.columns:
         save_df["Start Date"] = pd.to_datetime(
             save_df["Start Date"],
@@ -149,6 +152,9 @@ def load_saved_data(default_df):
         try:
             saved_df = pd.read_csv(DATA_FILE)
 
+            if "Delete?" in saved_df.columns:
+                saved_df = saved_df.drop(columns=["Delete?"])
+
             if "Start Date" in saved_df.columns:
                 saved_df["Start Date"] = pd.to_datetime(saved_df["Start Date"], errors="coerce")
 
@@ -166,8 +172,9 @@ def load_saved_data(default_df):
 
 def get_last_saved_text():
     if os.path.exists(DATA_FILE):
-        last_saved_time = datetime.fromtimestamp(os.path.getmtime(DATA_FILE))
-        return last_saved_time.strftime("%d %b %Y, %I:%M %p")
+        last_saved_time = datetime.fromtimestamp(os.path.getmtime(DATA_FILE), tz=SG_TIMEZONE)
+        return last_saved_time.strftime("%d %b %Y, %I:%M %p SGT")
+
     return "Not saved yet"
 
 
@@ -244,7 +251,6 @@ default_data = pd.DataFrame({
     ]
 })
 
-# Convert old Time Period text into calendar date columns
 parsed_dates = default_data['Time Period'].apply(parse_time_period)
 default_data['Start Date'] = parsed_dates.apply(lambda x: x[0])
 default_data['End Date'] = parsed_dates.apply(lambda x: x[1])
@@ -257,7 +263,6 @@ default_data = default_data.drop(columns=['Time Period'])
 if 'org_data' not in st.session_state:
     st.session_state.org_data = load_saved_data(default_data)
 
-# If old session still has Time Period, convert it
 if 'Time Period' in st.session_state.org_data.columns:
     parsed_dates = st.session_state.org_data['Time Period'].apply(parse_time_period)
 
@@ -269,7 +274,6 @@ if 'Time Period' in st.session_state.org_data.columns:
 
     st.session_state.org_data = st.session_state.org_data.drop(columns=['Time Period'])
 
-# Protect against missing columns
 required_columns = {
     'Name / Team Name': '',
     'Type': 'Person',
@@ -292,6 +296,9 @@ st.session_state.org_data = st.session_state.org_data[list(required_columns.keys
 # =========================================================
 def clean_org_data(df):
     clean_df = df.copy()
+
+    if "Delete?" in clean_df.columns:
+        clean_df = clean_df.drop(columns=["Delete?"])
 
     clean_df['Name / Team Name'] = clean_df['Name / Team Name'].fillna('').astype(str).str.strip()
     clean_df = clean_df[clean_df['Name / Team Name'] != '']
@@ -366,20 +373,28 @@ default_palette = {
 # =========================================================
 st.markdown("### ✏️ Edit Data Directly")
 st.write(
-    "Click any cell to edit. For the dates, click the cell under *Start Date* or *End Date* "
-    "and choose from the calendar dropdown."
+    "Edit the table below. To delete rows, tick **Delete?** for the rows you want to remove, "
+    "then click **Delete Selected Rows**. Click **Save Changes** to keep the changes for everyone using the app link."
 )
 
 temp_clean_df = clean_org_data(st.session_state.org_data)
 all_possible_managers = sorted(set(temp_clean_df['Name / Team Name'].unique().tolist() + ['None']))
 
+editor_df = st.session_state.org_data.copy()
+editor_df.insert(0, "Delete?", False)
+
 edited_df = st.data_editor(
-    st.session_state.org_data,
+    editor_df,
     num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
     height=350,
     column_config={
+        "Delete?": st.column_config.CheckboxColumn(
+            "Delete?",
+            help="Tick this row, then click Delete Selected Rows below.",
+            default=False
+        ),
         "Name / Team Name": st.column_config.TextColumn(
             "Name / Team Name",
             required=True
@@ -418,24 +433,42 @@ edited_df = st.data_editor(
     }
 )
 
-st.session_state.org_data = edited_df
+button_col1, button_col2, button_col3, info_col = st.columns([1.4, 1.2, 1.5, 4])
 
-save_col, load_col, info_col = st.columns([1.2, 1.4, 4])
+with button_col1:
+    delete_clicked = st.button("🗑️ Delete Selected Rows", use_container_width=True)
 
-with save_col:
-    if st.button("💾 Save Changes", use_container_width=True):
-        save_data(st.session_state.org_data)
-        st.success("Saved!")
+with button_col2:
+    save_clicked = st.button("💾 Save Changes", use_container_width=True)
 
-with load_col:
-    if st.button("🔄 Load Latest Saved Data", use_container_width=True):
-        st.session_state.org_data = load_saved_data(default_data)
-        st.rerun()
+with button_col3:
+    load_clicked = st.button("🔄 Load Latest Saved Data", use_container_width=True)
+
+if delete_clicked:
+    delete_count = int(edited_df["Delete?"].fillna(False).sum())
+
+    edited_df = edited_df[edited_df["Delete?"] != True].copy()
+    edited_df = edited_df.drop(columns=["Delete?"], errors="ignore").reset_index(drop=True)
+
+    st.session_state.org_data = edited_df
+    st.success(f"Deleted {delete_count} row(s). Click Save Changes to keep this for everyone.")
+    st.rerun()
+
+else:
+    st.session_state.org_data = edited_df.drop(columns=["Delete?"], errors="ignore").reset_index(drop=True)
+
+if save_clicked:
+    save_data(st.session_state.org_data)
+    st.success("Saved! Everyone using this app link can load this latest version.")
+
+if load_clicked:
+    st.session_state.org_data = load_saved_data(default_data)
+    st.rerun()
 
 with info_col:
     st.caption(
         f"Last saved: {get_last_saved_text()} | "
-        "This saved file is shared by everyone using this app link."
+        "Time shown in Singapore time. Saved file is shared by everyone using this app link."
     )
 
 clean_df = clean_org_data(st.session_state.org_data)
@@ -504,15 +537,20 @@ with st.sidebar.expander("Click to change colors"):
 
 
 # =========================================================
-# 10. Sidebar - Spacing
+# 10. Sidebar - Layout and Font Settings
 # =========================================================
-st.sidebar.header("📐 Adjust Chart Spacing")
+st.sidebar.header("📐 Adjust Chart Layout")
 
 with st.sidebar.expander("Layout Settings"):
     chart_width = st.slider("Horizontal Width", 1500, 12000, 5000, 100)
     chart_height = st.slider("Vertical Height", 700, 5000, 1800, 100)
     box_width = st.slider("Box Width", 100, 350, 170, 10)
-    box_height = st.slider("Box Height", 50, 220, 90, 5)
+    box_height = st.slider("Box Height", 50, 260, 90, 5)
+
+    st.markdown("#### Font Size")
+    name_font_size = st.slider("Name Font Size", 8, 24, 12, 1)
+    role_font_size = st.slider("Role Font Size", 7, 20, 10, 1)
+    time_font_size = st.slider("Time Period Font Size", 6, 18, 9, 1)
 
 
 # =========================================================
@@ -522,9 +560,9 @@ if not clean_df.empty:
     default_color = '#ced4da'
 
     def build_styled_text(name, role, time_period, entry_type, is_faded):
-        wrapped_name = wrap_text(safe_text(name), box_width, font_size=12)
-        wrapped_role = wrap_text(safe_text(role), box_width, font_size=10)
-        wrapped_time = wrap_text(safe_text(time_period), box_width, font_size=9)
+        wrapped_name = wrap_text(safe_text(name), box_width, font_size=name_font_size)
+        wrapped_role = wrap_text(safe_text(role), box_width, font_size=role_font_size)
+        wrapped_time = wrap_text(safe_text(time_period), box_width, font_size=time_font_size)
 
         if is_faded:
             name_style = "name_faded"
@@ -722,36 +760,36 @@ if not clean_df.empty:
                     "offset": [8, 0],
                     "rich": {
                         "name_active": {
-                            "fontSize": 12,
+                            "fontSize": name_font_size,
                             "fontWeight": "bold",
                             "color": "#ffffff",
-                            "lineHeight": 15
+                            "lineHeight": name_font_size + 4
                         },
                         "role_active": {
-                            "fontSize": 10,
+                            "fontSize": role_font_size,
                             "color": "#f8f9fa",
-                            "lineHeight": 13
+                            "lineHeight": role_font_size + 3
                         },
                         "time_active": {
-                            "fontSize": 9,
+                            "fontSize": time_font_size,
                             "color": "#e9ecef",
-                            "lineHeight": 12
+                            "lineHeight": time_font_size + 3
                         },
                         "name_faded": {
-                            "fontSize": 12,
+                            "fontSize": name_font_size,
                             "fontWeight": "bold",
                             "color": "#6c757d",
-                            "lineHeight": 15
+                            "lineHeight": name_font_size + 4
                         },
                         "role_faded": {
-                            "fontSize": 10,
+                            "fontSize": role_font_size,
                             "color": "#adb5bd",
-                            "lineHeight": 13
+                            "lineHeight": role_font_size + 3
                         },
                         "time_faded": {
-                            "fontSize": 9,
+                            "fontSize": time_font_size,
                             "color": "#ced4da",
-                            "lineHeight": 12
+                            "lineHeight": time_font_size + 3
                         }
                     }
                 }

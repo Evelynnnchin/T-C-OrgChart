@@ -25,6 +25,14 @@ if 'org_data' not in st.session_state:
             'ATS T&C Engineer 3', 'Comms T&C Engineer 3', 'RCS/Network Engineer', 'Sig T&C Engineer 1', 'Sig T&C Engineer 4', 'Subcon 4', 'Subcon 1', 'Subcon 1', 'Subcon 3', 
             'Subcon 2', 'Subcon 2', 'Subcon 4', 'Subcon 2', 'Subcon 1', 'Subcon 3', 'Subcon', 'Train Engineer 1', 'Train Engineer 2'
         ],
+        'Time Period': [
+            'Feb-25 to Dec-29', '', '', '', '', '', 
+            '', '', '', '', '', '', '', 
+            '', '', 'Jul-25 to Dec-35', 'Jun-26 to Jul-26', 'Oct-26 to Jun-28', '', 'May-25 to Dec-29', 'Jan-26 to Dec-26', 'Jan-26 to Oct-26', 
+            'Apr-26 to Nov-26', 'Jan-26 to Oct-26', 'Oct-27 to Dec-27', 'Dec-25 to Sep-28', 'Jan-27 to Sep-28', 'Aug-25 to Sep-28', 'Jul-26 to Sep-26', 'Apr-26 to Nov-26', 'Dec-25 to Sep-27', 
+            'Jul-26 to Jul-27', 'Aug-25 to Feb-27', 'Jun-26 to Jul-26', 'Aug-25 to Jul-27', 'Apr-26 to Nov-26', 'Aug-26 to Nov-26', 'Dec-25 to Sep-26', 'Oct-26 to Sep-28', 'Aug-26 to Nov-26', 
+            'Oct-26 to Sep-28', 'Aug-25 to Jul-27', 'Oct-26 to Dec-27', 'Dec-25 to Sep-26', 'Aug-25 to Jul-27', 'Oct-26 to Dec-27', '', 'Jan-26 to Dec-28', 'Jan-26 to Dec-28'
+        ],
         'Department': [
             'Management', 'Group', 'Group', 'Project-based', 'Project-based', 'Project-based', 
             'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 'Shared Pool', 
@@ -61,14 +69,12 @@ selected_dept = st.sidebar.selectbox("Filter by Department:", ["All"] + all_dept
 
 # 4. Direct Editor Table
 st.markdown("### ✏️ Edit Data Directly")
-st.write("Click any cell to edit. Scroll to the bottom to add a new person. Select a row on the far left and press 'Delete' to remove someone.")
-
 edited_df = st.data_editor(
     st.session_state.org_data,
     num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
-    height=300
+    height=250
 )
 
 # Clean the edited data
@@ -76,7 +82,7 @@ clean_df = edited_df.dropna(subset=['Name']).copy()
 clean_df['Name'] = clean_df['Name'].astype(str).str.strip()
 clean_df['Supervisor'] = clean_df['Supervisor'].fillna('None').astype(str).str.strip()
 
-st.markdown("---")
+st.markdown("***")
 
 # 5. Build and Render Chart
 if not clean_df.empty:
@@ -114,21 +120,32 @@ if not clean_df.empty:
         
         person = person_data.iloc[0]
         role = person.get('Role', 'N/A')
+        time_period = person.get('Time Period', '')
         dept = person.get('Department', 'N/A')
         supervisor = person.get('Supervisor', 'None')
         
         direct_reports = df[df['Supervisor'] == current_name]['Name'].tolist()
         reports_str = ", ".join(direct_reports) if direct_reports else "None"
         
+        # Build the multi-line text to display INSIDE the box
+        display_text = f"{current_name}"
+        if role not in ['Group', 'Sub-Group']:
+            display_text += f"\n{role}"
+        if time_period and str(time_period).strip() != '':
+            display_text += f"\n{time_period}"
+
+        # HTML formatted tooltip for when you click the box
         tooltip_value = (
+            f"<b>Name:</b> {current_name}<br/>"
             f"<b>Role:</b> {role}<br/>"
             f"<b>Department:</b> {dept}<br/>"
+            f"<b>Time Period:</b> {time_period if str(time_period).strip() != '' else 'N/A'}<br/>"
             f"<b>Supervisor:</b> {supervisor}<br/>"
             f"<b>Direct Reports ({len(direct_reports)}):</b> {reports_str}"
         )
 
         node = {
-            "name": current_name,
+            "name": display_text,
             "value": tooltip_value,
             "itemStyle": {"color": color_map.get(dept, default_color)},
             "children": []
@@ -162,7 +179,7 @@ if not clean_df.empty:
         "tooltip": {
             "trigger": "item",
             "triggerOn": "click",
-            "formatter": "{b}<br/><br/>{c}", 
+            "formatter": "{c}",
             "backgroundColor": "rgba(255, 255, 255, 0.95)",
             "borderColor": "#ccc",
             "borderWidth": 1,
@@ -177,26 +194,24 @@ if not clean_df.empty:
             {
                 "type": "tree",
                 "data": [tree_data],
+                "orient": "TB", # Top to bottom
                 "top": "5%",
-                "left": "10%",
+                "left": "5%",
                 "bottom": "5%",
-                "right": "20%",
-                "symbolSize": 18,
+                "right": "5%",
+                "symbol": "roundRect", # Box shape
+                "symbolSize": [160, 65],
+                "edgeShape": "polyline", # Straight right-angle lines
                 "roam": True,
-                "initialTreeDepth": 2, 
+                "initialTreeDepth": 3, 
                 "label": {
-                    "position": "left",
+                    "position": "inside",
                     "verticalAlign": "middle",
-                    "align": "right",
-                    "fontSize": 14,
+                    "align": "center",
+                    "fontSize": 11,
+                    "color": "white",
+                    "lineHeight": 16,
                     "fontWeight": "bold"
-                },
-                "leaves": {
-                    "label": {
-                        "position": "right",
-                        "verticalAlign": "middle",
-                        "align": "left"
-                    }
                 },
                 "expandAndCollapse": True,
                 "animationDuration": 550,
@@ -205,7 +220,6 @@ if not clean_df.empty:
         ]
     }
 
-    st.markdown(f"### Tree View: **{root_name}**")
-    st_echarts(options=options, height="800px")
+    st_echarts(options=options, height="850px")
 else:
     st.warning("The table is empty. Please add at least one person to generate the chart.")

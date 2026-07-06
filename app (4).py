@@ -215,15 +215,31 @@ with st.sidebar.expander("Click to change colors"):
 # =========================================================
 st.sidebar.header("📐 Adjust Chart Spacing")
 with st.sidebar.expander("Layout Settings"):
-    chart_width = st.slider("Horizontal Width", 1000, 5000, 1800, 100)
-    chart_height = st.slider("Vertical Height", 500, 3000, 1000, 100)
+    chart_width = st.slider("Horizontal Width", 1000, 8000, 1800, 100)
+    chart_height = st.slider("Vertical Height", 500, 5000, 1000, 100)
+
+
+# =========================================================
+# 3d. Sidebar - Font Size and Box Size
+# =========================================================
+st.sidebar.header("🔠 Font / Box Settings")
+with st.sidebar.expander("Font and Box Settings", expanded=True):
+    name_font_size = st.slider("Name Font Size", 8, 30, 12, 1)
+    role_font_size = st.slider("Role / Job Title Font Size", 6, 24, 10, 1)
+    time_font_size = st.slider("Time Period Font Size", 6, 22, 9, 1)
+
+    node_width = st.slider("Box Width", 120, 360, 150, 10)
+    node_height = st.slider("Box Height", 50, 180, 60, 10)
+
+    horizontal_gap = st.slider("PDF Horizontal Gap", 30, 200, 55, 5)
+    vertical_gap = st.slider("PDF Vertical Gap", 40, 220, 80, 5)
 
 
 # =========================================================
 # 4. Data Editor
 # =========================================================
 st.markdown("### ✏️ Edit Data Directly")
-st.write("Click any cell to edit. *Reports To* and *Color Group* now have handy dropdowns so you don't have to type out names!")
+st.write("Click any cell to edit. *Reports To* and *Color Group* have dropdowns so you don't have to type out names.")
 
 all_possible_managers = clean_df['Name / Team Name'].tolist() + ['None']
 
@@ -275,7 +291,6 @@ st.markdown("***")
 
 # =========================================================
 # 5. Build Tree Data
-# This keeps your existing chart logic, including vertical stacking.
 # =========================================================
 def get_node_display_data(current_name, df):
     person_data = df[df['Name / Team Name'] == current_name]
@@ -371,7 +386,7 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
         "children": []
     }
 
-    # VERTICAL STACKING LOGIC - kept from your original app
+    # VERTICAL STACKING LOGIC
     is_bottom_level = True
     for report in real_direct_reports:
         if not df[df['Reports To'] == report].empty:
@@ -403,7 +418,6 @@ def get_root_name(df):
 
 # =========================================================
 # 6. Full PDF Export
-# This exports the full org chart, not only the visible screen area.
 # =========================================================
 def assign_tree_positions(root):
     """
@@ -424,7 +438,6 @@ def assign_tree_positions(root):
 
         children = node.get("children", [])
 
-        child_ids = []
         if children:
             child_x_values = []
             for idx, child in enumerate(children):
@@ -432,7 +445,6 @@ def assign_tree_positions(root):
                 edges.append((node_id, child_id))
                 walk(child, depth + 1, child_id)
                 child_x_values.append(positions[child_id][0])
-                child_ids.append(child_id)
 
             x = (min(child_x_values) + max(child_x_values)) / 2
         else:
@@ -478,11 +490,11 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
 
     positions, nodes, edges, leaf_count, max_depth = assign_tree_positions(tree_data)
 
-    # Node sizing roughly follows your ECharts node size.
-    box_w = 150
-    box_h = 60
-    x_gap = 55
-    y_gap = 80
+    # Use sidebar-controlled box size and gaps
+    box_w = node_width
+    box_h = node_height
+    x_gap = horizontal_gap
+    y_gap = vertical_gap
 
     margin_x = 45
     margin_y = 45
@@ -495,7 +507,6 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
     page_h = max(chart_h + margin_y * 2 + title_space, 650)
 
     # ReportLab has practical limits on massive pages.
-    # This keeps huge charts exportable.
     max_page_size = 14400
     page_w = min(page_w, max_page_size)
     page_h = min(page_h, max_page_size)
@@ -539,6 +550,16 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
         c.line(parent_x, mid_y, child_x, mid_y)
         c.line(child_x, mid_y, child_x, child_y)
 
+    # PDF font sizes based on sidebar controls
+    pdf_name_size = max(name_font_size * 0.8, 6)
+    pdf_role_size = max(role_font_size * 0.8, 5)
+    pdf_time_size = max(time_font_size * 0.8, 5)
+
+    # Dynamic vertical positions inside the box
+    name_y_offset = max(12, pdf_name_size + 5)
+    role_y_offset = name_y_offset + max(16, pdf_role_size + 8)
+    time_y_offset_from_bottom = max(10, pdf_time_size + 4)
+
     # Boxes
     for node_id, node in nodes.items():
         raw = node.get("raw", {})
@@ -571,46 +592,46 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
         c.roundRect(left, bottom, box_w, box_h, radius=6, fill=1, stroke=1)
 
         # Name
-        c.setFont("Helvetica-Bold", 9.5)
+        c.setFont("Helvetica-Bold", pdf_name_size)
         c.setFillColor(name_colour)
         draw_centered_wrapped_text(
             c,
             name,
             left + 8,
-            top - 13,
+            top - name_y_offset,
             box_w - 16,
             "Helvetica-Bold",
-            9.5,
+            pdf_name_size,
             max_lines=2
         )
 
         # Role
         if entry_type == "Person" and str(role).strip() != "":
-            c.setFont("Helvetica", 7.5)
+            c.setFont("Helvetica", pdf_role_size)
             c.setFillColor(role_colour)
             draw_centered_wrapped_text(
                 c,
                 role,
                 left + 8,
-                top - 34,
+                top - role_y_offset,
                 box_w - 16,
                 "Helvetica",
-                7.5,
+                pdf_role_size,
                 max_lines=1
             )
 
         # Time period
         if str(time_period).strip() != "":
-            c.setFont("Helvetica", 6.8)
+            c.setFont("Helvetica", pdf_time_size)
             c.setFillColor(time_colour)
             draw_centered_wrapped_text(
                 c,
                 time_period,
                 left + 8,
-                bottom + 12,
+                bottom + time_y_offset_from_bottom,
                 box_w - 16,
                 "Helvetica",
-                6.8,
+                pdf_time_size,
                 max_lines=1
             )
 
@@ -673,7 +694,7 @@ if not clean_df.empty:
                     "bottom": "5%",
                     "right": "2%",
                     "symbol": "rect",
-                    "symbolSize": [150, 60],
+                    "symbolSize": [node_width, node_height],
                     "edgeShape": "polyline",
                     "roam": True,
                     "initialTreeDepth": -1,
@@ -685,36 +706,36 @@ if not clean_df.empty:
                         "offset": [10, 0],
                         "rich": {
                             "name_active": {
-                                "fontSize": 12,
+                                "fontSize": name_font_size,
                                 "fontWeight": "bold",
                                 "color": "#ffffff",
-                                "lineHeight": 18
+                                "lineHeight": name_font_size + 6
                             },
                             "role_active": {
-                                "fontSize": 10,
+                                "fontSize": role_font_size,
                                 "color": "#f8f9fa",
-                                "lineHeight": 14
+                                "lineHeight": role_font_size + 5
                             },
                             "time_active": {
-                                "fontSize": 9,
+                                "fontSize": time_font_size,
                                 "color": "#e9ecef",
-                                "lineHeight": 12
+                                "lineHeight": time_font_size + 4
                             },
                             "name_faded": {
-                                "fontSize": 12,
+                                "fontSize": name_font_size,
                                 "fontWeight": "bold",
                                 "color": "#6c757d",
-                                "lineHeight": 18
+                                "lineHeight": name_font_size + 6
                             },
                             "role_faded": {
-                                "fontSize": 10,
+                                "fontSize": role_font_size,
                                 "color": "#adb5bd",
-                                "lineHeight": 14
+                                "lineHeight": role_font_size + 5
                             },
                             "time_faded": {
-                                "fontSize": 9,
+                                "fontSize": time_font_size,
                                 "color": "#ced4da",
-                                "lineHeight": 12
+                                "lineHeight": time_font_size + 4
                             }
                         }
                     }

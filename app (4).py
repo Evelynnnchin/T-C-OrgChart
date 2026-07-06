@@ -589,6 +589,25 @@ def hex_to_reportlab_colour(hex_code, fallback="#ced4da"):
         return colors.HexColor(fallback)
 
 
+def get_effective_node_color(company, dept):
+    """
+    This controls the actual box color.
+
+    - If color_mode is Company:
+        Person boxes with Company = Siemens/Subcon use company color.
+        Team boxes or blank company fall back to Color Group color.
+    - If color_mode is Color Group:
+        Everything uses Color Group color.
+    """
+    company = str(company).strip()
+    dept = str(dept).strip()
+
+    if color_mode == "Company" and company != "":
+        return company_color_map.get(company, "#ced4da")
+
+    return color_map.get(dept, "#ced4da")
+
+
 # =========================================================
 # 5. Upload Excel / CSV
 # =========================================================
@@ -674,15 +693,25 @@ if filter_type == "Highlight by Name":
 
 elif filter_type == "Highlight by Company":
     valid_companies = sorted([c for c in clean_df["Company"].unique().tolist() if c != ""])
-    selected_company = st.sidebar.selectbox("Select Company:", valid_companies)
-    company_count = len(clean_df[clean_df["Company"] == selected_company])
-    st.sidebar.success(f"👥 Total {selected_company} count: **{company_count}**")
+
+    if valid_companies:
+        selected_company = st.sidebar.selectbox("Select Company:", valid_companies)
+        company_count = len(clean_df[clean_df["Company"] == selected_company])
+        st.sidebar.success(f"👥 Total {selected_company} count: **{company_count}**")
+    else:
+        selected_company = ""
+        st.sidebar.warning("No company values found.")
 
 elif filter_type == "Highlight by Role Group":
     valid_roles = sorted([r for r in clean_df["Role Group"].unique().tolist() if r != ""])
-    selected_role_group = st.sidebar.selectbox("Select Role Group:", valid_roles)
-    role_count = len(clean_df[clean_df["Role Group"] == selected_role_group])
-    st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
+
+    if valid_roles:
+        selected_role_group = st.sidebar.selectbox("Select Role Group:", valid_roles)
+        role_count = len(clean_df[clean_df["Role Group"] == selected_role_group])
+        st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
+    else:
+        selected_role_group = ""
+        st.sidebar.warning("No role values found.")
 
 elif filter_type == "Highlight by Color Group":
     selected_dept = st.sidebar.selectbox(
@@ -696,7 +725,17 @@ filter_active = filter_type != "Show All (No Filters)"
 # =========================================================
 # 7. Sidebar Colors
 # =========================================================
-st.sidebar.header("🎨 Customise Team Colors")
+st.sidebar.header("🎨 Customise Colors")
+
+color_mode = st.sidebar.radio(
+    "Color boxes by:",
+    ["Color Group", "Company"],
+    index=0,
+    help=(
+        "Color Group = project/team colors like DTL, JRL, RTS. "
+        "Company = Siemens/Subcon colors. Team boxes with blank company will still use Color Group."
+    ),
+)
 
 default_palette = {
     "Management": "#0081a7",
@@ -723,12 +762,32 @@ default_palette = {
     "Subcon": "#ffb703",
 }
 
-color_map = {}
+default_company_palette = {
+    "Siemens": "#009999",
+    "Subcon": "#ffb703",
+}
 
-with st.sidebar.expander("Click to change colors"):
+color_map = {}
+company_color_map = {}
+
+with st.sidebar.expander("Click to change Color Group colors", expanded=(color_mode == "Color Group")):
     for dept in sorted(clean_df["Color Group"].unique()):
         default_c = default_palette.get(dept, "#ced4da")
-        color_map[dept] = st.color_picker(str(dept), default_c)
+        color_map[dept] = st.color_picker(str(dept), default_c, key=f"group_color_{dept}")
+
+with st.sidebar.expander("Click to change Company colors", expanded=(color_mode == "Company")):
+    valid_company_colors = sorted([c for c in clean_df["Company"].unique().tolist() if c != ""])
+
+    if not valid_company_colors:
+        valid_company_colors = ["Siemens", "Subcon"]
+
+    for company in valid_company_colors:
+        default_c = default_company_palette.get(company, "#ced4da")
+        company_color_map[company] = st.color_picker(
+            str(company),
+            default_c,
+            key=f"company_color_{company}",
+        )
 
 
 # =========================================================
@@ -804,7 +863,7 @@ edited_df = st.data_editor(
         ),
         "Color Group": st.column_config.SelectboxColumn(
             "Color Group",
-            help="Select which color group to apply to the box.",
+            help="Select which color group/project this person belongs to.",
             options=dynamic_color_groups,
         ),
         "Time Period": st.column_config.TextColumn(
@@ -950,7 +1009,7 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
     real_direct_reports = df[df["Reports To"] == current_name]["Name / Team Name"].tolist()
     reports_str = ", ".join(real_direct_reports) if real_direct_reports else "None"
 
-    node_color = color_map.get(dept, "#ced4da")
+    node_color = get_effective_node_color(company, dept)
 
     if filter_active and not is_match:
         item_style = {
@@ -993,6 +1052,7 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
         f"<b>Company:</b> {company if str(company).strip() != '' else 'N/A'}<br/>"
         f"<b>Role:</b> {role if str(role).strip() != '' else 'N/A'}<br/>"
         f"<b>Color Group:</b> {dept}<br/>"
+        f"<b>Box Color By:</b> {color_mode}<br/>"
         f"<b>Time Period:</b> {time_period if str(time_period).strip() != '' else 'N/A'}<br/>"
         f"<b>Reports To:</b> {display_supervisor}<br/>"
         f"<b>Direct Reports ({len(real_direct_reports)}):</b> {reports_str}"
@@ -1055,12 +1115,14 @@ def build_chart_tree(df):
         if child:
             children.append(child)
 
+    root_color = color_map.get("Management", "#0081a7")
+
     return {
         "name": "{name_active|Org Chart}",
         "value": "<b>Name / Team:</b> Org Chart<br/><b>Role:</b> Master Root",
         "itemStyle": {
-            "color": color_map.get("Management", "#0081a7"),
-            "borderColor": color_map.get("Management", "#0081a7"),
+            "color": root_color,
+            "borderColor": root_color,
             "borderWidth": 1,
         },
         "raw": {
@@ -1180,6 +1242,7 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
     c.setFont("Helvetica", 9)
     exported_time = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%d %b %Y, %I:%M %p SGT")
     c.drawString(margin_x, page_h - margin_y - 16, f"Exported: {exported_time}")
+    c.drawString(margin_x, page_h - margin_y - 30, f"Box Color By: {color_mode}")
 
     chart_top_y = page_h - margin_y - title_space
 
@@ -1227,7 +1290,7 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
         dept = raw.get("dept", "")
         is_match = raw.get("is_match", True)
 
-        node_color = color_map.get(dept, "#ced4da")
+        node_color = get_effective_node_color(company, dept)
 
         left, top, bottom = node_box_xy(node_id)
 

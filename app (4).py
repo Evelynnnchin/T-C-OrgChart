@@ -1,840 +1,721 @@
-import streamlit as st
-import pandas as pd
-from streamlit_echarts import st_echarts
-import re
 import os
+import io
+import json
+import math
+import textwrap
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# =========================================================
-# 1. Page Configuration
-# =========================================================
-st.set_page_config(page_title="Editable T&C Org Chart", layout="wide")
-st.title("🏢 Editable T&C Organizational Chart")
+import pandas as pd
+import streamlit as st
+from streamlit_echarts import st_echarts
 
-DATA_FILE = "org_data_saved.csv"
-SG_TIMEZONE = ZoneInfo("Asia/Singapore")
-
-# Wider page + wider sidebar so color picker is not cut off
-st.markdown(
-    """
-    <style>
-    /* Make main page full width */
-    .block-container {
-        max-width: 100% !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-    }
-
-    /* Make sidebar wider so color picker is not cut off */
-    section[data-testid="stSidebar"] {
-        min-width: 420px !important;
-        width: 420px !important;
-        overflow: visible !important;
-    }
-
-    section[data-testid="stSidebar"] > div {
-        min-width: 420px !important;
-        width: 420px !important;
-        overflow: visible !important;
-    }
-
-    /* Make color picker popover appear above everything */
-    div[data-baseweb="popover"] {
-        z-index: 999999 !important;
-    }
-
-    /* Allow main content / chart to scroll horizontally */
-    div[data-testid="stVerticalBlock"] {
-        overflow-x: auto !important;
-    }
-
-    div[data-testid="stElementContainer"] {
-        overflow-x: auto !important;
-    }
-
-    iframe {
-        min-width: 100% !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.lib.units import mm
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 
 # =========================================================
-# 2. Helper Functions
+# PAGE CONFIG
 # =========================================================
-def parse_month_year(text, is_end=False):
-    if pd.isna(text) or str(text).strip() == "":
-        return pd.NaT
-
-    dt = pd.to_datetime("01 " + str(text).strip(), format="%d %b %y", errors="coerce")
-
-    if pd.notna(dt) and is_end:
-        dt = dt + pd.offsets.MonthEnd(0)
-
-    return dt
-
-
-def parse_time_period(period):
-    if pd.isna(period) or str(period).strip() == "":
-        return pd.NaT, pd.NaT
-
-    parts = str(period).split(" to ")
-
-    if len(parts) != 2:
-        return pd.NaT, pd.NaT
-
-    start_date = parse_month_year(parts[0], is_end=False)
-    end_date = parse_month_year(parts[1], is_end=True)
-
-    return start_date, end_date
-
-
-def format_period(start_date, end_date):
-    start_date = pd.to_datetime(start_date, errors="coerce")
-    end_date = pd.to_datetime(end_date, errors="coerce")
-
-    if pd.notna(start_date) and pd.notna(end_date):
-        return f"{start_date.strftime('%b %y')} to {end_date.strftime('%b %y')}"
-    elif pd.notna(start_date):
-        return f"From {start_date.strftime('%b %y')}"
-    elif pd.notna(end_date):
-        return f"Until {end_date.strftime('%b %y')}"
-    else:
-        return ""
-
-
-def wrap_text(text, box_width, font_size=10):
-    text = str(text).strip()
-
-    if text == "":
-        return ""
-
-    max_chars = max(8, int((box_width - 20) / (font_size * 0.6)))
-
-    words = text.split()
-    lines = []
-    current_line = ""
-
-    for word in words:
-        if len(word) > max_chars:
-            if current_line:
-                lines.append(current_line)
-                current_line = ""
-
-            for i in range(0, len(word), max_chars):
-                lines.append(word[i:i + max_chars])
-
-        else:
-            test_line = f"{current_line} {word}".strip()
-
-            if len(test_line) <= max_chars:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-
-    if current_line:
-        lines.append(current_line)
-
-    return "\n".join(lines)
-
-
-def safe_text(text):
-    return str(text).replace("{", "(").replace("}", ")").replace("|", "/")
-
-
-def save_data(df):
-    save_df = df.copy()
-
-    if "Delete?" in save_df.columns:
-        save_df = save_df.drop(columns=["Delete?"])
-
-    if "Start Date" in save_df.columns:
-        save_df["Start Date"] = pd.to_datetime(
-            save_df["Start Date"],
-            errors="coerce"
-        ).dt.strftime("%Y-%m-%d")
-
-    if "End Date" in save_df.columns:
-        save_df["End Date"] = pd.to_datetime(
-            save_df["End Date"],
-            errors="coerce"
-        ).dt.strftime("%Y-%m-%d")
-
-    save_df.to_csv(DATA_FILE, index=False)
-
-
-def load_saved_data(default_df):
-    if os.path.exists(DATA_FILE):
-        try:
-            saved_df = pd.read_csv(DATA_FILE)
-
-            if "Delete?" in saved_df.columns:
-                saved_df = saved_df.drop(columns=["Delete?"])
-
-            if "Start Date" in saved_df.columns:
-                saved_df["Start Date"] = pd.to_datetime(saved_df["Start Date"], errors="coerce")
-
-            if "End Date" in saved_df.columns:
-                saved_df["End Date"] = pd.to_datetime(saved_df["End Date"], errors="coerce")
-
-            return saved_df
-
-        except Exception as e:
-            st.warning(f"Could not load saved data. Using default data instead. Error: {e}")
-            return default_df.copy()
-
-    return default_df.copy()
-
-
-def get_last_saved_text():
-    if os.path.exists(DATA_FILE):
-        last_saved_time = datetime.fromtimestamp(os.path.getmtime(DATA_FILE), tz=SG_TIMEZONE)
-        return last_saved_time.strftime("%d %b %Y, %I:%M %p SGT")
-
-    return "Not saved yet"
+st.set_page_config(page_title="Editable Org Chart", layout="wide")
+st.title("🏢 Editable Organizational Chart")
 
 
 # =========================================================
-# 3. Default Data
+# FILE STORAGE
 # =========================================================
-default_data = pd.DataFrame({
-    'Name / Team Name': [
-        'Eric Tan', 'Project Based', 'Shared T&C Pool', 'CRL / OSIT', 'JRL Mainline', 'RTS',
-        'ATC', 'ATC / ATS', 'ATS', 'CBI', 'Comms / DCS / RCS / Network', 'CSF', 'Signalling',
-        'Subcon', 'Train', 'Augustine', 'Eric', 'Helmi', 'TBC', 'Diyana', 'Teerapat', 'Erwin',
-        'Keri', 'Unal', 'YC (from DTL)', 'Aceline', 'YC', 'Zhonghan', 'Adib', 'Apurva', 'Jack',
-        'Raymond', 'Damuel', 'Marek', 'Farid', 'Manish', 'Irfan', 'Khai', 'Mohan', 'Nazmi',
-        'Sam', 'Sufian', 'Syafiq', 'Vincent', 'Zaki', 'Zul', 'Akmal', 'Irwan', 'Richter'
+DATA_FILE = "org_chart_saved_data.csv"
+SETTINGS_FILE = "org_chart_settings.json"
+
+
+DEFAULT_DATA = pd.DataFrame({
+    "Name": [
+        "Alice Tan",
+        "Bob Lim",
+        "Charlie Ng",
+        "David Lee",
+        "Eve Wong",
+        "Frank Goh",
     ],
-    'Type': [
-        'Person', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box',
-        'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box', 'Team Box',
-        'Team Box', 'Team Box', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person',
-        'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person',
-        'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person',
-        'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person', 'Person'
+    "Role": [
+        "CEO",
+        "VP Engineering",
+        "VP Sales",
+        "Lead Developer",
+        "Backend Developer",
+        "Sales Executive",
     ],
-    'Job Title': [
-        'T&C Manager', '', '', '', '', '',
-        '', '', '', '', '', '', '',
-        '', '', 'OSIT Manager', 'T&C Engineer 2', 'ATS T&C Engineer 1', 'Mainline T&C Manager',
-        'T&C Coordinator', 'T&C Coordinator', 'ATC T&C Engineer 2',
-        'ATC T&C Engineer 1', 'ATC T&C Engineer 1', 'ATC T&C Engineer 1',
-        'ATC/ATS T&C Engineer 3', 'ATC/ATS T&C Engineer 1', 'ATS T&C Engineer 3',
-        'ATS T&C Engineer', 'ATS T&C Engineer 2', 'Sig T&C Engineer 2',
-        'ATS T&C Engineer 3', 'Comms T&C Engineer 3', 'RCS/Network Engineer',
-        'Sig T&C Engineer 1', 'Sig T&C Engineer 4', 'Subcon 4', 'Subcon 1', 'Subcon 1',
-        'Subcon 3', 'Subcon 2', 'Subcon 2', 'Subcon 4', 'Subcon 2', 'Subcon 1',
-        'Subcon 3', 'Subcon', 'Train Engineer 1', 'Train Engineer 2'
+    "Department": [
+        "Management",
+        "Engineering",
+        "Sales",
+        "Engineering",
+        "Engineering",
+        "Sales",
     ],
-    'Reports To': [
-        'None', 'Eric Tan', 'Eric Tan', 'Project Based', 'Project Based', 'Project Based',
-        'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool',
-        'Shared T&C Pool', 'Shared T&C Pool', 'Shared T&C Pool',
-        'Shared T&C Pool', 'Shared T&C Pool', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT',
-        'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC',
-        'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS',
-        'ATS', 'Comms / DCS / RCS / Network', 'Comms / DCS / RCS / Network',
-        'Signalling', 'Signalling', 'Subcon', 'Subcon', 'Subcon', 'Subcon',
-        'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon',
-        'Train', 'Train'
+    "Supervisor": [
+        "",
+        "Alice Tan",
+        "Alice Tan",
+        "Bob Lim",
+        "David Lee",
+        "Charlie Ng",
     ],
-    'Color Group': [
-        'Management', 'Group', 'Group', 'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC',
-        'ATC / ATS', 'ATS', 'ATC', 'Comms / DCS / RCS / Network', 'Group',
-        'Signalling', 'Subcon', 'Train', 'CRL / OSIT', 'CRL / OSIT', 'CRL / OSIT',
-        'CRL / OSIT', 'JRL Mainline', 'RTS', 'ATC',
-        'ATC', 'ATC', 'ATC', 'ATC / ATS', 'ATC / ATS', 'ATC / ATS', 'ATS', 'ATS', 'ATS',
-        'ATS', 'Comms / DCS / RCS / Network', 'Comms / DCS / RCS / Network',
-        'Signalling', 'Signalling', 'Subcon', 'Subcon', 'Subcon', 'Subcon',
-        'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon', 'Subcon',
-        'Train', 'Train'
+    "Box Colour": [
+        "#DDEBFF",
+        "#E8F5E9",
+        "#FFF3E0",
+        "#E8F5E9",
+        "#E8F5E9",
+        "#FFF3E0",
     ],
-    'Time Period': [
-        'Feb 25 to Dec 29', '', '', '', '', '',
-        '', '', '', '', '', '', '',
-        '', '', 'Jul 25 to Dec 35', 'Jun 26 to Jul 26', 'Oct 26 to Jun 28', '',
-        'May 25 to Dec 29', 'Jan 26 to Dec 26', 'Jan 26 to Oct 26',
-        'Apr 26 to Nov 26', 'Jan 26 to Oct 26', 'Oct 27 to Dec 27',
-        'Dec 25 to Sep 28', 'Jan 27 to Sep 28', 'Aug 25 to Sep 28',
-        'Jul 26 to Sep 26', 'Apr 26 to Nov 26', 'Dec 25 to Sep 27',
-        'Jul 26 to Jul 27', 'Aug 25 to Feb 27', 'Jun 26 to Jul 26',
-        'Aug 25 to Jul 27', 'Apr 26 to Nov 26', 'Aug 26 to Nov 26',
-        'Dec 25 to Sep 26', 'Oct 26 to Sep 28', 'Aug 26 to Nov 26',
-        'Oct 26 to Sep 28', 'Aug 25 to Jul 27', 'Oct 26 to Dec 27',
-        'Dec 25 to Sep 26', 'Aug 25 to Jul 27', 'Oct 26 to Dec 27',
-        '', 'Jan 26 to Dec 28', 'Jan 26 to Dec 28'
-    ]
 })
 
-parsed_dates = default_data['Time Period'].apply(parse_time_period)
-default_data['Start Date'] = parsed_dates.apply(lambda x: x[0])
-default_data['End Date'] = parsed_dates.apply(lambda x: x[1])
-default_data = default_data.drop(columns=['Time Period'])
 
-
-# =========================================================
-# 4. Initialise Session State
-# =========================================================
-if 'org_data' not in st.session_state:
-    st.session_state.org_data = load_saved_data(default_data)
-
-if 'Time Period' in st.session_state.org_data.columns:
-    parsed_dates = st.session_state.org_data['Time Period'].apply(parse_time_period)
-
-    if 'Start Date' not in st.session_state.org_data.columns:
-        st.session_state.org_data['Start Date'] = parsed_dates.apply(lambda x: x[0])
-
-    if 'End Date' not in st.session_state.org_data.columns:
-        st.session_state.org_data['End Date'] = parsed_dates.apply(lambda x: x[1])
-
-    st.session_state.org_data = st.session_state.org_data.drop(columns=['Time Period'])
-
-required_columns = {
-    'Name / Team Name': '',
-    'Type': 'Person',
-    'Job Title': '',
-    'Reports To': 'None',
-    'Color Group': 'Group',
-    'Start Date': pd.NaT,
-    'End Date': pd.NaT
-}
-
-for col, default_value in required_columns.items():
-    if col not in st.session_state.org_data.columns:
-        st.session_state.org_data[col] = default_value
-
-st.session_state.org_data = st.session_state.org_data[list(required_columns.keys())]
-
-
-# =========================================================
-# 5. Clean Data Function
-# =========================================================
-def clean_org_data(df):
-    clean_df = df.copy()
-
-    if "Delete?" in clean_df.columns:
-        clean_df = clean_df.drop(columns=["Delete?"])
-
-    clean_df['Name / Team Name'] = clean_df['Name / Team Name'].fillna('').astype(str).str.strip()
-    clean_df = clean_df[clean_df['Name / Team Name'] != '']
-
-    clean_df['Type'] = (
-        clean_df['Type']
-        .fillna('Person')
-        .astype(str)
-        .str.strip()
-        .replace('', 'Person')
-    )
-
-    clean_df['Job Title'] = clean_df['Job Title'].fillna('').astype(str).str.strip()
-
-    clean_df['Reports To'] = (
-        clean_df['Reports To']
-        .fillna('None')
-        .astype(str)
-        .str.strip()
-        .replace('', 'None')
-    )
-
-    clean_df['Color Group'] = (
-        clean_df['Color Group']
-        .fillna('Group')
-        .astype(str)
-        .str.strip()
-        .replace(['', 'None', 'nan', 'NaN'], 'Group')
-    )
-
-    clean_df['Start Date'] = pd.to_datetime(clean_df['Start Date'], errors='coerce')
-    clean_df['End Date'] = pd.to_datetime(clean_df['End Date'], errors='coerce')
-
-    clean_df['Time Period'] = clean_df.apply(
-        lambda row: format_period(row['Start Date'], row['End Date']),
-        axis=1
-    )
-
-    clean_df['Role Group'] = clean_df['Job Title'].apply(
-        lambda x: re.sub(r'\s*\d+$', '', str(x)).strip()
-    )
-
-    return clean_df
-
-
-# =========================================================
-# 6. Default Colour Palette
-# =========================================================
-default_palette = {
-    'Management': '#0081a7',
-    'Group': '#00afb9',
-    'Project Based': '#00afb9',
-    'Shared T&C Pool': '#00afb9',
-    'Shared Pool': '#00afb9',
-    'CRL / OSIT': '#00afb9',
-    'JRL Mainline': '#00afb9',
-    'RTS': '#00afb9',
-    'ATC': '#00afb9',
-    'ATC / ATS': '#00afb9',
-    'ATS': '#00afb9',
-    'CBI': '#00afb9',
-    'Comms / DCS / RCS / Network': '#00afb9',
-    'CSF': '#00afb9',
-    'Signalling': '#00afb9',
-    'Subcon': '#ffb703',
-    'Train': '#00afb9'
+DEFAULT_SETTINGS = {
+    "box_width": 190,
+    "box_height": 92,
+    "font_size": 12,
+    "horizontal_gap": 40,
+    "vertical_gap": 95,
+    "pdf_margin": 40,
 }
 
 
+def ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Make sure required columns exist."""
+    required = ["Name", "Role", "Department", "Supervisor", "Box Colour"]
+    for col in required:
+        if col not in df.columns:
+            if col == "Box Colour":
+                df[col] = "#DDEBFF"
+            else:
+                df[col] = ""
+    df = df[required].copy()
+    df = df.fillna("")
+    return df
+
+
+def load_data() -> pd.DataFrame:
+    if os.path.exists(DATA_FILE):
+        try:
+            df = pd.read_csv(DATA_FILE, dtype=str).fillna("")
+            return ensure_columns(df)
+        except Exception:
+            return DEFAULT_DATA.copy()
+    return DEFAULT_DATA.copy()
+
+
+def save_data(df: pd.DataFrame) -> None:
+    df = ensure_columns(df)
+    df.to_csv(DATA_FILE, index=False)
+
+
+def load_settings() -> dict:
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            settings = DEFAULT_SETTINGS.copy()
+            settings.update(saved)
+            return settings
+        except Exception:
+            return DEFAULT_SETTINGS.copy()
+    return DEFAULT_SETTINGS.copy()
+
+
+def save_settings(settings: dict) -> None:
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+
+
+if "org_data" not in st.session_state:
+    st.session_state.org_data = load_data()
+
+if "settings" not in st.session_state:
+    st.session_state.settings = load_settings()
+
+
 # =========================================================
-# 7. Data Editor
+# SIDEBAR SETTINGS
 # =========================================================
-st.markdown("### ✏️ Edit Data Directly")
+with st.sidebar:
+    st.header("Chart Settings")
+
+    st.session_state.settings["box_width"] = st.slider(
+        "Box width",
+        min_value=120,
+        max_value=360,
+        value=int(st.session_state.settings["box_width"]),
+        step=10,
+    )
+
+    st.session_state.settings["box_height"] = st.slider(
+        "Box height",
+        min_value=60,
+        max_value=180,
+        value=int(st.session_state.settings["box_height"]),
+        step=5,
+    )
+
+    st.session_state.settings["font_size"] = st.slider(
+        "Font size",
+        min_value=8,
+        max_value=24,
+        value=int(st.session_state.settings["font_size"]),
+        step=1,
+    )
+
+    st.session_state.settings["horizontal_gap"] = st.slider(
+        "Horizontal gap",
+        min_value=10,
+        max_value=160,
+        value=int(st.session_state.settings["horizontal_gap"]),
+        step=5,
+    )
+
+    st.session_state.settings["vertical_gap"] = st.slider(
+        "Vertical gap",
+        min_value=50,
+        max_value=220,
+        value=int(st.session_state.settings["vertical_gap"]),
+        step=5,
+    )
+
+    save_settings(st.session_state.settings)
+
+    st.divider()
+
+    st.caption("Tip: Use hex colours like #DDEBFF, #E8F5E9, #FFF3E0.")
+
+
+# =========================================================
+# DATA EDITOR
+# =========================================================
+st.markdown("### ✏️ Edit Data")
 st.write(
-    "Edit the table below. To delete rows, tick **Delete?** for the rows you want to remove, "
-    "then click **Delete Selected Rows**. Click **Save Changes** to keep the changes for everyone using the app link."
+    "Edit the table directly. Add rows at the bottom, or select rows and delete them. "
+    "The data auto-saves after every edit."
 )
-
-temp_clean_df = clean_org_data(st.session_state.org_data)
-all_possible_managers = sorted(set(temp_clean_df['Name / Team Name'].unique().tolist() + ['None']))
-
-editor_df = st.session_state.org_data.copy()
-editor_df.insert(0, "Delete?", False)
 
 edited_df = st.data_editor(
-    editor_df,
+    ensure_columns(st.session_state.org_data),
     num_rows="dynamic",
     use_container_width=True,
-    hide_index=True,
-    height=350,
+    height=330,
     column_config={
-        "Delete?": st.column_config.CheckboxColumn(
-            "Delete?",
-            help="Tick this row, then click Delete Selected Rows below.",
-            default=False
-        ),
-        "Name / Team Name": st.column_config.TextColumn(
-            "Name / Team Name",
-            required=True
-        ),
-        "Type": st.column_config.SelectboxColumn(
-            "Type",
-            help="Is this a real person or a structural team box?",
-            options=["Person", "Team Box"],
-            required=True
-        ),
-        "Job Title": st.column_config.TextColumn(
-            "Job Title"
-        ),
-        "Reports To": st.column_config.SelectboxColumn(
-            "Reports To",
-            help="Select the person or team this row sits under.",
-            options=all_possible_managers,
-            required=True
-        ),
-        "Color Group": st.column_config.SelectboxColumn(
-            "Color Group",
-            help="Select which department colour to apply to the box.",
-            options=list(default_palette.keys()),
-            required=True
-        ),
-        "Start Date": st.column_config.DateColumn(
-            "Start Date",
-            help="Choose the start date from the calendar.",
-            format="DD MMM YYYY"
-        ),
-        "End Date": st.column_config.DateColumn(
-            "End Date",
-            help="Choose the end date from the calendar.",
-            format="DD MMM YYYY"
+        "Box Colour": st.column_config.TextColumn(
+            "Box Colour",
+            help="Use hex colour format, for example #DDEBFF",
         )
-    }
+    },
+    key="org_editor",
 )
 
-button_col1, button_col2, button_col3, info_col = st.columns([1.4, 1.2, 1.5, 4])
+edited_df = ensure_columns(edited_df)
+st.session_state.org_data = edited_df
+save_data(edited_df)
 
-with button_col1:
-    delete_clicked = st.button("🗑️ Delete Selected Rows", use_container_width=True)
-
-with button_col2:
-    save_clicked = st.button("💾 Save Changes", use_container_width=True)
-
-with button_col3:
-    load_clicked = st.button("🔄 Load Latest Saved Data", use_container_width=True)
-
-if delete_clicked:
-    delete_count = int(edited_df["Delete?"].fillna(False).sum())
-
-    edited_df = edited_df[edited_df["Delete?"] != True].copy()
-    edited_df = edited_df.drop(columns=["Delete?"], errors="ignore").reset_index(drop=True)
-
-    st.session_state.org_data = edited_df
-    st.success(f"Deleted {delete_count} row(s). Click Save Changes to keep this for everyone.")
-    st.rerun()
-
-else:
-    st.session_state.org_data = edited_df.drop(columns=["Delete?"], errors="ignore").reset_index(drop=True)
-
-if save_clicked:
-    save_data(st.session_state.org_data)
-    st.success("Saved! Everyone using this app link can load this latest version.")
-
-if load_clicked:
-    st.session_state.org_data = load_saved_data(default_data)
-    st.rerun()
-
-with info_col:
-    st.caption(
-        f"Last saved: {get_last_saved_text()} | "
-        "Time shown in Singapore time. Saved file is shared by everyone using this app link."
-    )
-
-clean_df = clean_org_data(st.session_state.org_data)
-
-st.markdown("***")
+sg_time = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%d %b %Y, %I:%M %p")
+st.caption(f"Auto-saved at {sg_time} Singapore time.")
 
 
 # =========================================================
-# 8. Sidebar - View Options
+# ORG CHART HELPERS
 # =========================================================
-st.sidebar.header("🔍 View Options")
-
-filter_type = st.sidebar.radio(
-    "Select a view:",
-    [
-        "Show All (No Filters)",
-        "Highlight by Name",
-        "Highlight by Role Group",
-        "Highlight by Color Group"
-    ]
-)
-
-selected_person = "All"
-selected_role_group = "All"
-selected_dept = "All"
-
-if filter_type == "Highlight by Name":
-    selected_person = st.sidebar.selectbox(
-        "Select Name:",
-        sorted(clean_df['Name / Team Name'].dropna().astype(str).unique().tolist())
-    )
-
-elif filter_type == "Highlight by Role Group":
-    valid_roles = sorted([
-        r for r in clean_df['Role Group'].dropna().astype(str).unique().tolist()
-        if r.strip() != ''
-    ])
-
-    if valid_roles:
-        selected_role_group = st.sidebar.selectbox("Select Role Group:", valid_roles)
-        role_count = len(clean_df[clean_df['Role Group'] == selected_role_group])
-        st.sidebar.success(f"👥 Total {selected_role_group} count: **{role_count}**")
-    else:
-        st.sidebar.warning("No role groups available yet.")
-
-elif filter_type == "Highlight by Color Group":
-    selected_dept = st.sidebar.selectbox(
-        "Select Color Group:",
-        sorted(clean_df['Color Group'].dropna().astype(str).unique().tolist())
-    )
-
-filter_active = filter_type != "Show All (No Filters)"
+def clean_hex(value: str, fallback: str = "#DDEBFF") -> str:
+    value = str(value).strip()
+    if not value.startswith("#"):
+        return fallback
+    if len(value) not in [4, 7]:
+        return fallback
+    try:
+        colors.HexColor(value)
+        return value
+    except Exception:
+        return fallback
 
 
-# =========================================================
-# 9. Main Page - Custom Colours
-# =========================================================
-st.markdown("### 🎨 Customise Team Colors")
+def get_roots(df: pd.DataFrame) -> list:
+    names = set(df["Name"].astype(str).str.strip())
+    roots = []
 
-color_map = {}
+    for _, row in df.iterrows():
+        name = str(row["Name"]).strip()
+        sup = str(row["Supervisor"]).strip()
+        if not name:
+            continue
+        if sup == "" or sup.lower() in ["none", "nan", "n/a", "-"] or sup not in names:
+            roots.append(name)
 
-with st.expander("Click to change colors"):
-    color_groups = sorted(clean_df['Color Group'].dropna().astype(str).unique())
-
-    # Show colour pickers in rows of 4 so they have enough space
-    cols_per_row = 4
-
-    for i in range(0, len(color_groups), cols_per_row):
-        cols = st.columns(cols_per_row)
-
-        for j, dept in enumerate(color_groups[i:i + cols_per_row]):
-            with cols[j]:
-                default_c = default_palette.get(dept, '#ced4da')
-                color_map[dept] = st.color_picker(
-                    dept,
-                    default_c,
-                    key=f"color_picker_{dept}"
-                )
-
-# =========================================================
-# 10. Sidebar - Layout and Font Settings
-# =========================================================
-st.sidebar.header("📐 Adjust Chart Layout")
-
-with st.sidebar.expander("Layout Settings"):
-    chart_width = st.slider("Horizontal Width", 1500, 12000, 5000, 100)
-    chart_height = st.slider("Vertical Height", 700, 5000, 1800, 100)
-    box_width = st.slider("Box Width", 100, 350, 170, 10)
-    box_height = st.slider("Box Height", 50, 260, 90, 5)
-
-    st.markdown("#### Font Size")
-    name_font_size = st.slider("Name Font Size", 8, 24, 12, 1)
-    role_font_size = st.slider("Role Font Size", 7, 20, 10, 1)
-    time_font_size = st.slider("Time Period Font Size", 6, 18, 9, 1)
+    return roots
 
 
-# =========================================================
-# 11. Build and Render Chart
-# =========================================================
-if not clean_df.empty:
-    default_color = '#ced4da'
+def build_children_map(df: pd.DataFrame) -> dict:
+    names = set(df["Name"].astype(str).str.strip())
+    children = {name: [] for name in names if name}
 
-    def build_styled_text(name, role, time_period, entry_type, is_faded):
-        wrapped_name = wrap_text(safe_text(name), box_width, font_size=name_font_size)
-        wrapped_role = wrap_text(safe_text(role), box_width, font_size=role_font_size)
-        wrapped_time = wrap_text(safe_text(time_period), box_width, font_size=time_font_size)
+    for _, row in df.iterrows():
+        name = str(row["Name"]).strip()
+        sup = str(row["Supervisor"]).strip()
+        if not name:
+            continue
+        if sup in names and sup != name:
+            children.setdefault(sup, []).append(name)
 
-        if is_faded:
-            name_style = "name_faded"
-            role_style = "role_faded"
-            time_style = "time_faded"
-        else:
-            name_style = "name_active"
-            role_style = "role_active"
-            time_style = "time_active"
+    return children
 
-        display_text = "\n".join([
-            f"{{{name_style}|{line}}}"
-            for line in wrapped_name.split("\n")
-            if line.strip() != ""
-        ])
 
-        if entry_type == 'Person' and str(role).strip() != "":
-            display_text += "\n" + "\n".join([
-                f"{{{role_style}|{line}}}"
-                for line in wrapped_role.split("\n")
-                if line.strip() != ""
-            ])
-
-        if str(time_period).strip() != "":
-            display_text += "\n" + "\n".join([
-                f"{{{time_style}|{line}}}"
-                for line in wrapped_time.split("\n")
-                if line.strip() != ""
-            ])
-
-        return display_text
-
-    def build_tree(current_name, df, visited=None, real_supervisor=None):
-        if visited is None:
-            visited = set()
-
-        if current_name in visited:
-            return None
-
-        visited.add(current_name)
-
-        person_data = df[df['Name / Team Name'] == current_name]
-
-        if person_data.empty:
-            return None
-
-        person = person_data.iloc[0]
-
-        role = person.get('Job Title', '')
-        role_group = person.get('Role Group', '')
-        time_period = person.get('Time Period', '')
-        dept = person.get('Color Group', 'Group')
-        entry_type = person.get('Type', 'Person')
-
-        actual_supervisor = person.get('Reports To', 'None')
-        display_supervisor = real_supervisor if real_supervisor else actual_supervisor
-
-        real_direct_reports = df[df['Reports To'] == current_name]['Name / Team Name'].tolist()
-        reports_str = ", ".join(real_direct_reports) if real_direct_reports else "None"
-
-        is_match = True
-
-        if filter_active:
-            if filter_type == "Highlight by Name" and current_name != selected_person:
-                is_match = False
-            elif filter_type == "Highlight by Role Group" and role_group != selected_role_group:
-                is_match = False
-            elif filter_type == "Highlight by Color Group" and dept != selected_dept:
-                is_match = False
-
-        node_color = color_map.get(dept, default_color)
-
-        if filter_active and not is_match:
-            item_style = {
-                "color": "#f8f9fa",
-                "borderColor": "#ced4da",
-                "borderWidth": 1
-            }
-            display_text = build_styled_text(
-                current_name,
-                role,
-                time_period,
-                entry_type,
-                is_faded=True
-            )
-
-        else:
-            item_style = {
-                "color": node_color,
-                "borderColor": node_color,
-                "borderWidth": 1
-            }
-            display_text = build_styled_text(
-                current_name,
-                role,
-                time_period,
-                entry_type,
-                is_faded=False
-            )
-
-        tooltip_value = (
-            f"<b>Name / Team:</b> {current_name}<br/>"
-            f"<b>Role:</b> {role if str(role).strip() != '' else 'N/A'}<br/>"
-            f"<b>Color Group:</b> {dept}<br/>"
-            f"<b>Time Period:</b> {time_period if str(time_period).strip() != '' else 'N/A'}<br/>"
-            f"<b>Reports To:</b> {display_supervisor}<br/>"
-            f"<b>Direct Reports ({len(real_direct_reports)}):</b> {reports_str}"
-        )
-
-        node = {
-            "name": display_text,
-            "value": tooltip_value,
-            "itemStyle": item_style,
-            "children": []
+def build_record_map(df: pd.DataFrame) -> dict:
+    record_map = {}
+    for _, row in df.iterrows():
+        name = str(row["Name"]).strip()
+        if not name:
+            continue
+        record_map[name] = {
+            "name": name,
+            "role": str(row.get("Role", "")).strip(),
+            "department": str(row.get("Department", "")).strip(),
+            "supervisor": str(row.get("Supervisor", "")).strip(),
+            "colour": clean_hex(row.get("Box Colour", "#DDEBFF")),
         }
+    return record_map
 
-        is_bottom_level = True
 
-        for report in real_direct_reports:
-            if not df[df['Reports To'] == report].empty:
-                is_bottom_level = False
+def detect_cycles(df: pd.DataFrame) -> list:
+    """Simple cycle detection to prevent infinite org loops."""
+    record_map = build_record_map(df)
+    names = set(record_map.keys())
+    supervisor = {
+        name: record_map[name]["supervisor"]
+        for name in names
+        if record_map[name]["supervisor"] in names
+    }
+
+    cycles = []
+    for name in names:
+        seen = set()
+        current = name
+        while current in supervisor:
+            if current in seen:
+                cycles.append(name)
                 break
+            seen.add(current)
+            current = supervisor[current]
+    return sorted(set(cycles))
 
-        if is_bottom_level and len(real_direct_reports) > 0:
-            current_chain_link = node
 
-            for report in real_direct_reports:
-                child_node = build_tree(report, df, visited, real_supervisor=current_name)
+def to_echarts_tree(name: str, record_map: dict, children_map: dict) -> dict:
+    rec = record_map.get(name, {})
+    role = rec.get("role", "")
+    dept = rec.get("department", "")
+    colour = rec.get("colour", "#DDEBFF")
 
-                if child_node:
-                    current_chain_link["children"].append(child_node)
-                    current_chain_link = child_node
+    label_text = name
+    if role:
+        label_text += f"\n{role}"
+    if dept:
+        label_text += f"\n{dept}"
 
-        else:
-            for report in real_direct_reports:
-                child_node = build_tree(report, df, visited)
+    return {
+        "name": label_text,
+        "itemStyle": {
+            "color": colour,
+            "borderColor": "#555555",
+            "borderWidth": 1,
+        },
+        "children": [
+            to_echarts_tree(child, record_map, children_map)
+            for child in children_map.get(name, [])
+        ],
+    }
 
-                if child_node:
-                    node["children"].append(child_node)
 
-        return node
+def make_echarts_option(df: pd.DataFrame, settings: dict) -> dict:
+    record_map = build_record_map(df)
+    children_map = build_children_map(df)
+    roots = get_roots(df)
 
-    top_level_matches = clean_df[clean_df['Reports To'].str.lower() == 'none']
+    if len(roots) == 0:
+        return {}
 
-    if not top_level_matches.empty:
-        root_name = top_level_matches.iloc[0]['Name / Team Name']
+    if len(roots) == 1:
+        data = [to_echarts_tree(roots[0], record_map, children_map)]
     else:
-        root_name = clean_df.iloc[0]['Name / Team Name']
+        data = [{
+            "name": "Organization",
+            "itemStyle": {
+                "color": "#F5F5F5",
+                "borderColor": "#555555",
+                "borderWidth": 1,
+            },
+            "children": [
+                to_echarts_tree(root, record_map, children_map)
+                for root in roots
+            ],
+        }]
 
-    tree_data = build_tree(root_name, clean_df)
+    font_size = int(settings["font_size"])
 
-    options = {
+    return {
         "tooltip": {
             "trigger": "item",
-            "triggerOn": "click",
-            "formatter": "{c}",
-            "backgroundColor": "rgba(255, 255, 255, 0.95)",
-            "borderColor": "#ccc",
-            "borderWidth": 1,
-            "textStyle": {
-                "color": "#333"
-            }
+            "triggerOn": "mousemove",
         },
-        "toolbox": {
-            "show": True,
-            "right": "30px",
-            "top": "15px",
-            "feature": {
-                "saveAsImage": {
-                    "name": "TC_Org_Chart",
-                    "title": "Download as PNG",
-                    "pixelRatio": 3
-                }
-            }
-        },
-        "series": [
-            {
-                "type": "tree",
-                "data": [tree_data],
-                "orient": "TB",
-                "top": "5%",
-                "left": "1%",
-                "bottom": "5%",
-                "right": "1%",
-                "symbol": "rect",
-                "symbolSize": [box_width, box_height],
-                "edgeShape": "polyline",
-                "roam": True,
-                "initialTreeDepth": -1,
-                "expandAndCollapse": True,
-                "animationDuration": 550,
-                "animationDurationUpdate": 750,
+        "series": [{
+            "type": "tree",
+            "data": data,
+            "top": "4%",
+            "left": "3%",
+            "bottom": "4%",
+            "right": "18%",
+            "symbolSize": 14,
+            "orient": "TB",
+            "roam": True,
+            "expandAndCollapse": True,
+            "initialTreeDepth": -1,
+            "label": {
+                "position": "top",
+                "verticalAlign": "middle",
+                "align": "center",
+                "fontSize": font_size,
+                "lineHeight": font_size + 5,
+                "width": int(settings["box_width"]),
+                "overflow": "break",
+            },
+            "leaves": {
                 "label": {
-                    "position": "insideLeft",
-                    "offset": [8, 0],
-                    "rich": {
-                        "name_active": {
-                            "fontSize": name_font_size,
-                            "fontWeight": "bold",
-                            "color": "#ffffff",
-                            "lineHeight": name_font_size + 4
-                        },
-                        "role_active": {
-                            "fontSize": role_font_size,
-                            "color": "#f8f9fa",
-                            "lineHeight": role_font_size + 3
-                        },
-                        "time_active": {
-                            "fontSize": time_font_size,
-                            "color": "#e9ecef",
-                            "lineHeight": time_font_size + 3
-                        },
-                        "name_faded": {
-                            "fontSize": name_font_size,
-                            "fontWeight": "bold",
-                            "color": "#6c757d",
-                            "lineHeight": name_font_size + 4
-                        },
-                        "role_faded": {
-                            "fontSize": role_font_size,
-                            "color": "#adb5bd",
-                            "lineHeight": role_font_size + 3
-                        },
-                        "time_faded": {
-                            "fontSize": time_font_size,
-                            "color": "#ced4da",
-                            "lineHeight": time_font_size + 3
-                        }
-                    }
+                    "position": "bottom",
+                    "verticalAlign": "middle",
+                    "align": "center",
                 }
-            }
-        ]
+            },
+            "emphasis": {
+                "focus": "descendant"
+            },
+            "animationDuration": 350,
+            "animationDurationUpdate": 500,
+        }]
     }
 
-    st_echarts(
-        options=options,
-        height=f"{chart_height}px",
-        width=f"{chart_width}px"
+
+# =========================================================
+# PDF LAYOUT HELPERS
+# =========================================================
+def calculate_tree_positions(df: pd.DataFrame, settings: dict):
+    """
+    Calculates a full org chart layout for PDF export.
+    It uses a simple tidy tree algorithm:
+    - Leaves get consecutive x positions.
+    - Parents are centred above their children.
+    """
+    record_map = build_record_map(df)
+    children_map = build_children_map(df)
+    roots = get_roots(df)
+
+    if not roots:
+        return {}, {}, [], 0, 0
+
+    # If there are multiple roots, make a virtual root so all appear in one PDF.
+    virtual_root = "__ORG_ROOT__"
+    if len(roots) > 1:
+        record_map[virtual_root] = {
+            "name": "Organization",
+            "role": "",
+            "department": "",
+            "supervisor": "",
+            "colour": "#F5F5F5",
+        }
+        children_map[virtual_root] = roots
+        root_nodes = [virtual_root]
+    else:
+        root_nodes = roots
+
+    box_w = int(settings["box_width"])
+    box_h = int(settings["box_height"])
+    h_gap = int(settings["horizontal_gap"])
+    v_gap = int(settings["vertical_gap"])
+
+    positions = {}
+    depths = {}
+    next_leaf_x = [0]
+
+    def assign(node, depth):
+        depths[node] = depth
+        kids = children_map.get(node, [])
+
+        if not kids:
+            x = next_leaf_x[0]
+            next_leaf_x[0] += 1
+        else:
+            child_xs = []
+            for child in kids:
+                assign(child, depth + 1)
+                child_xs.append(positions[child][0])
+            x = (min(child_xs) + max(child_xs)) / 2
+
+        y = depth
+        positions[node] = (x, y)
+
+    for root in root_nodes:
+        assign(root, 0)
+
+    max_depth = max(depths.values()) if depths else 0
+    leaf_count = max(next_leaf_x[0], 1)
+
+    # Convert layout units into PDF points.
+    x_spacing = box_w + h_gap
+    y_spacing = box_h + v_gap
+
+    point_positions = {}
+    for node, (x_unit, y_unit) in positions.items():
+        point_positions[node] = (
+            x_unit * x_spacing,
+            y_unit * y_spacing,
+        )
+
+    chart_w = max((leaf_count - 1) * x_spacing + box_w, box_w)
+    chart_h = (max_depth + 1) * box_h + max_depth * v_gap
+
+    return point_positions, record_map, children_map, chart_w, chart_h
+
+
+def draw_wrapped_centered_text(c, text, x, y, width, font_name, font_size, max_lines):
+    """
+    Draws wrapped text centred inside a box.
+    x, y = top-left start area for text block.
+    """
+    if not text:
+        return
+
+    # Approximate wrap width by points.
+    avg_char_width = max(font_size * 0.48, 1)
+    wrap_chars = max(int(width / avg_char_width), 8)
+    lines = []
+
+    for part in str(text).split("\n"):
+        wrapped = textwrap.wrap(part, width=wrap_chars) or [""]
+        lines.extend(wrapped)
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        if len(lines[-1]) > 3:
+            lines[-1] = lines[-1][:-3] + "..."
+
+    line_height = font_size + 3
+    total_h = len(lines) * line_height
+
+    current_y = y - (0 if len(lines) == 1 else 0)
+    start_y = current_y - (line_height / 2)
+
+    for i, line in enumerate(lines):
+        line_w = stringWidth(line, font_name, font_size)
+        c.drawString(x + (width - line_w) / 2, start_y - i * line_height, line)
+
+
+def create_pdf_bytes(df: pd.DataFrame, settings: dict) -> bytes:
+    df = ensure_columns(df)
+    cycles = detect_cycles(df)
+    if cycles:
+        raise ValueError(
+            "Supervisor loop detected. Please fix these names before exporting: "
+            + ", ".join(cycles)
+        )
+
+    positions, record_map, children_map, chart_w, chart_h = calculate_tree_positions(df, settings)
+
+    if not positions:
+        raise ValueError("No valid names found to export.")
+
+    box_w = int(settings["box_width"])
+    box_h = int(settings["box_height"])
+    margin = int(settings["pdf_margin"])
+
+    # Add space for title and timestamp.
+    title_space = 55
+
+    page_w = chart_w + margin * 2
+    page_h = chart_h + margin * 2 + title_space
+
+    # Limit extremely huge PDFs to a still usable size.
+    # PDF points: 72 points = 1 inch.
+    max_page_size = 14400  # 200 inches
+    page_w = min(max(page_w, 800), max_page_size)
+    page_h = min(max(page_h, 600), max_page_size)
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(page_w, page_h))
+
+    # Title
+    c.setFont("Helvetica-Bold", 18)
+    title = "Organization Chart"
+    c.drawString(margin, page_h - margin, title)
+
+    c.setFont("Helvetica", 9)
+    sg_time = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%d %b %Y, %I:%M %p SGT")
+    c.drawString(margin, page_h - margin - 16, f"Exported: {sg_time}")
+
+    # Start drawing from top.
+    top_y = page_h - margin - title_space
+
+    # Draw connectors first.
+    c.setStrokeColor(colors.HexColor("#777777"))
+    c.setLineWidth(1)
+
+    for parent, kids in children_map.items():
+        if parent not in positions:
+            continue
+        px, py = positions[parent]
+        parent_center_x = margin + px + box_w / 2
+        parent_bottom_y = top_y - py - box_h
+
+        for child in kids:
+            if child not in positions:
+                continue
+            cx, cy = positions[child]
+            child_center_x = margin + cx + box_w / 2
+            child_top_y = top_y - cy
+
+            mid_y = (parent_bottom_y + child_top_y) / 2
+            c.line(parent_center_x, parent_bottom_y, parent_center_x, mid_y)
+            c.line(parent_center_x, mid_y, child_center_x, mid_y)
+            c.line(child_center_x, mid_y, child_center_x, child_top_y)
+
+    # Draw boxes.
+    for node, (x, y) in positions.items():
+        rec = record_map[node]
+        left = margin + x
+        top = top_y - y
+        bottom = top - box_h
+
+        fill_colour = colors.HexColor(clean_hex(rec.get("colour", "#DDEBFF")))
+        c.setFillColor(fill_colour)
+        c.setStrokeColor(colors.HexColor("#444444"))
+        c.roundRect(left, bottom, box_w, box_h, radius=8, fill=1, stroke=1)
+
+        # Name
+        name_font = max(int(settings["font_size"]) + 1, 8)
+        role_font = max(int(settings["font_size"]) - 1, 7)
+        dept_font = max(int(settings["font_size"]) - 2, 7)
+
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", name_font)
+        draw_wrapped_centered_text(
+            c,
+            rec.get("name", ""),
+            left + 8,
+            top - 18,
+            box_w - 16,
+            "Helvetica-Bold",
+            name_font,
+            max_lines=2,
+        )
+
+        # Role
+        c.setFont("Helvetica", role_font)
+        draw_wrapped_centered_text(
+            c,
+            rec.get("role", ""),
+            left + 8,
+            top - 45,
+            box_w - 16,
+            "Helvetica",
+            role_font,
+            max_lines=2,
+        )
+
+        # Department
+        c.setFont("Helvetica-Oblique", dept_font)
+        draw_wrapped_centered_text(
+            c,
+            rec.get("department", ""),
+            left + 8,
+            bottom + 20,
+            box_w - 16,
+            "Helvetica-Oblique",
+            dept_font,
+            max_lines=1,
+        )
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# =========================================================
+# VALIDATION
+# =========================================================
+df_for_chart = ensure_columns(st.session_state.org_data)
+df_for_chart = df_for_chart[df_for_chart["Name"].astype(str).str.strip() != ""].copy()
+
+cycles = detect_cycles(df_for_chart)
+if cycles:
+    st.error(
+        "Supervisor loop detected. Please fix this before viewing/exporting: "
+        + ", ".join(cycles)
     )
 
+duplicate_names = df_for_chart["Name"][df_for_chart["Name"].duplicated()].tolist()
+if duplicate_names:
+    st.warning(
+        "Duplicate names found. The org chart works best when every Name is unique: "
+        + ", ".join(sorted(set(duplicate_names)))
+    )
+
+
+# =========================================================
+# CHART VIEW
+# =========================================================
+st.markdown("### 📊 Org Chart Preview")
+st.write("Drag to move around. Scroll to zoom. The PDF export below will include the full chart.")
+
+option = make_echarts_option(df_for_chart, st.session_state.settings)
+
+if option and not cycles:
+    chart_height = max(650, min(1300, 220 + df_for_chart.shape[0] * 40))
+    st_echarts(
+        options=option,
+        height=f"{chart_height}px",
+        width="100%",
+        key="org_chart",
+    )
 else:
-    st.warning("The table is empty. Please add at least one person or team box to generate the chart.")
+    st.info("Add at least one person with a Name to generate the org chart.")
+
+
+# =========================================================
+# PDF DOWNLOAD
+# =========================================================
+st.markdown("### 📥 Download Full Scale PDF")
+
+try:
+    pdf_bytes = create_pdf_bytes(df_for_chart, st.session_state.settings)
+    filename_time = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d_%H%M")
+    st.download_button(
+        label="Download Full Org Chart as PDF",
+        data=pdf_bytes,
+        file_name=f"full_org_chart_{filename_time}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
+    st.success("PDF is ready. It exports the full org chart, not just the visible screen area.")
+except Exception as e:
+    st.error(f"PDF export is not ready yet: {e}")
+
+
+# =========================================================
+# OPTIONAL DATA DOWNLOAD
+# =========================================================
+st.markdown("### 💾 Backup Data")
+
+csv_bytes = df_for_chart.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download Data as CSV",
+    data=csv_bytes,
+    file_name="org_chart_data_backup.csv",
+    mime="text/csv",
+    use_container_width=True,
+)

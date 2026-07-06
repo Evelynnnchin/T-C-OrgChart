@@ -35,7 +35,6 @@ REQUIRED_COLS = [
 ]
 
 OPTIONAL_COLS = ["Time Period"]
-
 ALL_COLS = REQUIRED_COLS + OPTIONAL_COLS
 
 
@@ -77,15 +76,10 @@ HEADER_ALIASES = {
 
 
 def standardise_uploaded_table(df):
-    """
-    Converts uploaded Excel/CSV into:
-    Name / Team Name | Type | Job Title | Reports To | Color Group | Time Period
-    """
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
 
     rename_map = {}
-
     for col in df.columns:
         key = normalise_header(col)
         if key in HEADER_ALIASES:
@@ -127,7 +121,13 @@ def standardise_uploaded_table(df):
     df["Type"] = df["Type"].replace({"": "Person"})
     df["Type"] = df["Type"].apply(
         lambda x: "Team Box"
-        if str(x).strip().lower() in ["team", "team box", "teambox", "group", "project group"]
+        if str(x).strip().lower() in [
+            "team",
+            "team box",
+            "teambox",
+            "group",
+            "project group",
+        ]
         else "Person"
     )
 
@@ -548,7 +548,7 @@ if uploaded_file is not None:
             st.session_state.loaded_upload_signature = upload_signature
             st.success("Reloaded uploaded file.")
 
-        st.caption("Tip: row order controls the vertical order of branches in the chart.")
+        st.caption("Tip: row order controls project order and people order.")
 
     except Exception as e:
         st.error(f"Could not load uploaded file: {e}")
@@ -603,17 +603,17 @@ st.sidebar.header("🎨 Customise Team Colors")
 
 default_palette = {
     "Management": "#0081a7",
-    "Group": "#00afb9",
-    "Project Based": "#00afb9",
-    "Shared Pool": "#00afb9",
 
-    "CRL": "#00afb9",
-    "JRL": "#00afb9",
-    "RTS": "#00afb9",
     "DTL": "#00afb9",
+    "JRL": "#00afb9",
+    "CRL": "#00afb9",
+    "RTS": "#00afb9",
     "Train": "#00afb9",
     "CSF": "#00afb9",
 
+    "Group": "#00afb9",
+    "Project Based": "#00afb9",
+    "Shared Pool": "#00afb9",
     "None": "#ced4da",
 
     "CRL / OSIT": "#00afb9",
@@ -640,8 +640,8 @@ with st.sidebar.expander("Click to change colors"):
 st.sidebar.header("📐 Chart Settings")
 
 with st.sidebar.expander("Layout Settings"):
-    chart_width = st.slider("Chart Width", 800, 4000, 1400, 100)
-    chart_height = st.slider("Chart Height", 800, 8000, 2600, 100)
+    chart_width = st.slider("Chart Width", 1000, 8000, 2400, 100)
+    chart_height = st.slider("Chart Height", 800, 10000, 3600, 100)
 
 with st.sidebar.expander("Font and Box Settings", expanded=True):
     name_font_size = st.slider("Name Font Size", 8, 30, 12, 1)
@@ -651,8 +651,8 @@ with st.sidebar.expander("Font and Box Settings", expanded=True):
     node_width = st.slider("Box Width", 120, 400, 180, 10)
     node_height = st.slider("Box Height", 50, 200, 75, 10)
 
-    horizontal_gap = st.slider("PDF Horizontal Gap", 30, 300, 120, 5)
-    vertical_gap = st.slider("PDF Vertical Gap", 20, 180, 45, 5)
+    horizontal_gap = st.slider("PDF Horizontal Gap", 30, 220, 70, 5)
+    vertical_gap = st.slider("PDF Vertical Gap", 40, 240, 90, 5)
 
 
 # =========================================================
@@ -773,7 +773,64 @@ def get_node_display_data(current_name, df):
     }
 
 
+def should_stack_people_under_this_node(current_name, df):
+    """
+    This is the key logic.
+
+    Chart stays TOP-DOWN.
+    DTL/JRL/CRL/RTS/Train/CSF stay side-by-side.
+    People under each group become a vertical chain.
+    """
+    project_groups = ["DTL", "JRL", "CRL", "RTS", "Train", "CSF"]
+
+    if current_name in project_groups:
+        return True
+
+    row_match = df[df["Name / Team Name"] == current_name]
+
+    if row_match.empty:
+        return False
+
+    row = row_match.iloc[0]
+
+    entry_type = str(row.get("Type", "")).strip().lower()
+    job_title = str(row.get("Job Title", "")).strip().lower()
+    reports_to = str(row.get("Reports To", "")).strip().lower()
+
+    # Also allow uploaded project boxes that are not exactly named DTL/JRL/etc.
+    if (
+        entry_type == "team box"
+        and reports_to not in ["none", ""]
+        and current_name.lower() not in ["t&c coordinator", "tc coordinator"]
+        and "manager" not in job_title
+        and "coordinator" not in job_title
+    ):
+        return True
+
+    return False
+
+
 def build_tree(current_name, df, visited=None, real_supervisor=None):
+    """
+    Final visual layout:
+        T&C Manager
+             ↓
+        T&C Coordinator
+             ↓
+        DTL   JRL   CRL   RTS   Train   CSF
+         ↓     ↓     ↓     ↓      ↓      ↓
+       person person person person person person
+         ↓     ↓
+       person person
+         ↓
+       person
+
+    IMPORTANT:
+    - ECharts orientation remains TB.
+    - We do NOT use LR.
+    - Project people are displayed as a visual chain only.
+    - Their actual Reports To value still remains the project group.
+    """
     if visited is None:
         visited = set()
 
@@ -848,12 +905,30 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
         "children": [],
     }
 
-    # Keeps child order exactly as uploaded Excel row order
-    for report in real_direct_reports:
-        child_node = build_tree(report, df, visited)
+    # =====================================================
+    # TOP-DOWN + VERTICAL PEOPLE STACKING
+    # =====================================================
+    if should_stack_people_under_this_node(current_name, df) and len(real_direct_reports) > 0:
+        current_chain_link = node
 
-        if child_node:
-            node["children"].append(child_node)
+        for report in real_direct_reports:
+            child_node = build_tree(
+                report,
+                df,
+                visited,
+                real_supervisor=current_name,
+            )
+
+            if child_node:
+                current_chain_link["children"].append(child_node)
+                current_chain_link = child_node
+
+    else:
+        for report in real_direct_reports:
+            child_node = build_tree(report, df, visited)
+
+            if child_node:
+                node["children"].append(child_node)
 
     return node
 
@@ -904,19 +979,18 @@ def build_chart_tree(df):
 
 
 # =========================================================
-# 11. PDF Export Functions - Vertical Stack Layout
+# 11. PDF Export Functions
 # =========================================================
 def assign_tree_positions(root):
     """
-    Vertical-stack layout:
-    - Hierarchy goes left to right
-    - People/teams stack from top to bottom
-    - This prevents the PDF from becoming too wide
+    Top-down PDF layout.
+    Since project people are already chained in build_tree(),
+    the PDF also shows project people stacked vertically.
     """
     positions = {}
     nodes = {}
     edges = []
-    next_leaf_y = [0]
+    next_leaf_x = [0]
     max_depth = [0]
 
     def walk(node, depth, path):
@@ -927,28 +1001,27 @@ def assign_tree_positions(root):
         children = node.get("children", [])
 
         if children:
-            child_y_values = []
+            child_x_values = []
 
             for idx, child in enumerate(children):
                 child_id = f"{path}.{idx}"
                 edges.append((node_id, child_id))
                 walk(child, depth + 1, child_id)
-                child_y_values.append(positions[child_id][1])
+                child_x_values.append(positions[child_id][0])
 
-            y = (min(child_y_values) + max(child_y_values)) / 2
+            x = (min(child_x_values) + max(child_x_values)) / 2
 
         else:
-            y = next_leaf_y[0]
-            next_leaf_y[0] += 1
+            x = next_leaf_x[0]
+            next_leaf_x[0] += 1
 
-        positions[node_id] = (depth, y)
+        positions[node_id] = (x, depth)
 
     walk(root, 0, "0")
 
-    row_count = max(next_leaf_y[0], 1)
-    depth_count = max_depth[0] + 1
+    leaf_count = max(next_leaf_x[0], 1)
 
-    return positions, nodes, edges, depth_count, row_count
+    return positions, nodes, edges, leaf_count, max_depth[0]
 
 
 def draw_centered_wrapped_text(c, text, x, top_y, width, font_name, font_size, max_lines):
@@ -982,7 +1055,7 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
     if not REPORTLAB_AVAILABLE:
         raise RuntimeError("reportlab is not installed. Add reportlab to requirements.txt.")
 
-    positions, nodes, edges, depth_count, row_count = assign_tree_positions(tree_data)
+    positions, nodes, edges, leaf_count, max_depth = assign_tree_positions(tree_data)
 
     box_w = node_width
     box_h = node_height
@@ -993,8 +1066,8 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
     margin_y = 45
     title_space = 55
 
-    chart_w = depth_count * box_w + max(depth_count - 1, 0) * x_gap
-    chart_h = row_count * box_h + max(row_count - 1, 0) * y_gap
+    chart_w = (leaf_count - 1) * (box_w + x_gap) + box_w
+    chart_h = (max_depth + 1) * box_h + max_depth * y_gap
 
     page_w = max(chart_w + margin_x * 2, 900)
     page_h = max(chart_h + margin_y * 2 + title_space, 650)
@@ -1017,9 +1090,9 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
     chart_top_y = page_h - margin_y - title_space
 
     def node_box_xy(node_id):
-        depth, y_unit = positions[node_id]
-        left = margin_x + depth * (box_w + x_gap)
-        top = chart_top_y - y_unit * (box_h + y_gap)
+        x_unit, depth = positions[node_id]
+        left = margin_x + x_unit * (box_w + x_gap)
+        top = chart_top_y - depth * (box_h + y_gap)
         bottom = top - box_h
         return left, top, bottom
 
@@ -1030,16 +1103,16 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
         p_left, p_top, p_bottom = node_box_xy(parent_id)
         c_left, c_top, c_bottom = node_box_xy(child_id)
 
-        parent_x = p_left + box_w
-        child_x = c_left
-        parent_y = p_bottom + box_h / 2
-        child_y = c_bottom + box_h / 2
+        parent_x = p_left + box_w / 2
+        child_x = c_left + box_w / 2
+        parent_y = p_bottom
+        child_y = c_top
 
-        mid_x = (parent_x + child_x) / 2
+        mid_y = (parent_y + child_y) / 2
 
-        c.line(parent_x, parent_y, mid_x, parent_y)
-        c.line(mid_x, parent_y, mid_x, child_y)
-        c.line(mid_x, child_y, child_x, child_y)
+        c.line(parent_x, parent_y, parent_x, mid_y)
+        c.line(parent_x, mid_y, child_x, mid_y)
+        c.line(child_x, mid_y, child_x, child_y)
 
     pdf_name_size = max(name_font_size * 0.8, 6)
     pdf_role_size = max(role_font_size * 0.8, 5)
@@ -1184,11 +1257,15 @@ if not clean_df.empty:
                 {
                     "type": "tree",
                     "data": [tree_data],
-                    "orient": "LR",
-                    "top": "2%",
+
+                    # TB = top-down. Do not change to LR.
+                    "orient": "TB",
+
+                    "top": "5%",
                     "left": "2%",
-                    "bottom": "2%",
-                    "right": "8%",
+                    "bottom": "5%",
+                    "right": "2%",
+
                     "symbol": "rect",
                     "symbolSize": [node_width, node_height],
                     "edgeShape": "polyline",

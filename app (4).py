@@ -34,8 +34,17 @@ REQUIRED_COLS = [
     "Color Group",
 ]
 
-OPTIONAL_COLS = ["Time Period"]
-ALL_COLS = REQUIRED_COLS + OPTIONAL_COLS
+OPTIONAL_COLS = ["Company", "Time Period"]
+
+ALL_COLS = [
+    "Name / Team Name",
+    "Type",
+    "Company",
+    "Job Title",
+    "Reports To",
+    "Color Group",
+    "Time Period",
+]
 
 
 def normalise_header(value):
@@ -52,6 +61,15 @@ HEADER_ALIASES = {
     "nameteam": "Name / Team Name",
 
     "type": "Type",
+
+    "company": "Company",
+    "organisation": "Company",
+    "organization": "Company",
+    "vendor": "Company",
+    "contractor": "Company",
+    "siemenssubcon": "Company",
+    "siemenssc": "Company",
+    "sc": "Company",
 
     "jobtitle": "Job Title",
     "role": "Job Title",
@@ -75,13 +93,32 @@ HEADER_ALIASES = {
 }
 
 
+def normalise_company(value):
+    value = str(value).strip()
+
+    if value.lower() in ["", "nan", "none"]:
+        return ""
+
+    lower_value = value.lower()
+
+    if lower_value in ["sc", "subcon", "sub-con", "sub contractor", "subcontractor"]:
+        return "Subcon"
+
+    if lower_value in ["siemens", "smpl"]:
+        return "Siemens"
+
+    return value
+
+
 def standardise_uploaded_table(df):
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
 
     rename_map = {}
+
     for col in df.columns:
         key = normalise_header(col)
+
         if key in HEADER_ALIASES:
             rename_map[col] = HEADER_ALIASES[key]
 
@@ -95,6 +132,9 @@ def standardise_uploaded_table(df):
 
     if "Type" not in df.columns:
         df["Type"] = "Person"
+
+    if "Company" not in df.columns:
+        df["Company"] = ""
 
     if "Job Title" not in df.columns:
         df["Job Title"] = ""
@@ -116,6 +156,7 @@ def standardise_uploaded_table(df):
     df["Name / Team Name"] = df["Name / Team Name"].replace(
         {"nan": "", "NaN": "", "None": ""}
     )
+
     df = df[df["Name / Team Name"] != ""].copy()
 
     df["Type"] = df["Type"].replace({"": "Person"})
@@ -130,6 +171,8 @@ def standardise_uploaded_table(df):
         ]
         else "Person"
     )
+
+    df["Company"] = df["Company"].apply(normalise_company)
 
     df["Reports To"] = df["Reports To"].replace(
         {"": "None", "nan": "None", "NaN": "None"}
@@ -173,25 +216,25 @@ def get_excel_sheet_names(uploaded_file):
 def get_default_data():
     return pd.DataFrame({
         "Name / Team Name": [
-            "Ramli, Mohammed Helmi",
-            "T&C Coordinator",
+            "Eric Tan",
 
             "DTL",
+            "Ramli, Mohammed Helmi",
             "Chin, Raymond",
             "Araguete Gamero, Eduardo Andres",
             "Uthaiyasuriyan, Mohan",
             "Bin Abdul Shukor, Ahmad Syafiq",
             "Tan, Sam Teng Boon",
             "Cher, Yee Hern Malcolm",
-            "BIN AHMAD, MUHAMAD ZULKHAIRI",
+            "Bin Ahmad, Muhamad Zulkhairi",
             "Mohamed Haleem, Mohamed Irfan",
             "Bin Mawasi, Muhammad Khairi",
             "Almonte, Rhyle Manuel",
 
             "JRL",
+            "Sidik, Diyana",
             "Tan, Zhong Han",
             "Bin Powzan, Muhammad Faridzuan",
-            "Sidik, Diyana",
             "Muhammad Zaki Bin Ismail",
             "Muhammad Sufian Bin Moksin",
             "Tan Yih Chyuan",
@@ -201,12 +244,12 @@ def get_default_data():
             "Udeaja, Chukwudi Augustine",
 
             "RTS",
+            "Ku, Teerapat Kian Xiong",
             "Khew, Aceline",
             "Jack",
             "Vincent",
             "Binte Samsudin, Khairunnisa",
             "Nazmi",
-            "Ku, Teerapat Kian Xiong",
 
             "Train",
             "Fabro, Richter",
@@ -217,9 +260,9 @@ def get_default_data():
         ],
         "Type": [
             "Person",
-            "Team Box",
 
             "Team Box",
+            "Person",
             "Person",
             "Person",
             "Person",
@@ -258,11 +301,54 @@ def get_default_data():
             "Team Box",
             "Person",
         ],
-        "Job Title": [
-            "T&C Manager",
-            "T&C Coordinator",
+        "Company": [
+            "Siemens",
 
-            "Project Group",
+            "",
+            "Siemens",
+            "Siemens",
+            "Siemens",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+
+            "",
+            "Siemens",
+            "Siemens",
+            "Siemens",
+            "Subcon",
+            "Subcon",
+            "Siemens",
+            "Subcon",
+
+            "",
+            "Siemens",
+
+            "",
+            "Siemens",
+            "Siemens",
+            "Siemens",
+            "Subcon",
+            "Subcon",
+            "Subcon",
+
+            "",
+            "Siemens",
+            "Siemens",
+
+            "",
+            "Siemens",
+        ],
+        "Job Title": [
+            "Head of Testing and Commissioning",
+
+            "",
+            "T&C Manager",
             "Senior System Design Engineer",
             "ATS Design Engineer",
             "T&C Engineer",
@@ -274,80 +360,80 @@ def get_default_data():
             "T&C Engineer",
             "T&C Engineer",
 
-            "Project Group",
+            "",
+            "T&C Coordinator",
             "ATS System Design Engineer",
             "Signalling T&C Engineer",
-            "T&C Coordinator",
             "T&C Engineer",
             "T&C Engineer",
-            "Role TBC",
+            "Signalling T&C Engineer",
             "T&C Engineer",
 
-            "Project Group",
+            "",
             "OSIT Manager",
 
-            "Project Group",
+            "",
+            "T&C Coordinator",
             "Signalling T&C Engineer",
             "Role TBC",
             "Role TBC",
             "Senior RAMS Engineer",
             "Role TBC",
-            "T&C Coordinator",
 
-            "Project Group",
+            "",
             "Trainborne T&C Engineer",
             "System Engineer",
 
-            "Project Group",
+            "",
             "Signalling T&C Engineer",
         ],
         "Reports To": [
             "None",
+
+            "Eric Tan",
+            "DTL",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
+            "Ramli, Mohammed Helmi",
             "Ramli, Mohammed Helmi",
 
-            "T&C Coordinator",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
-            "DTL",
+            "Eric Tan",
+            "JRL",
+            "Sidik, Diyana",
+            "Sidik, Diyana",
+            "Sidik, Diyana",
+            "Sidik, Diyana",
+            "Sidik, Diyana",
+            "Sidik, Diyana",
 
-            "T&C Coordinator",
-            "JRL",
-            "JRL",
-            "JRL",
-            "JRL",
-            "JRL",
-            "JRL",
-            "JRL",
-
-            "T&C Coordinator",
+            "Eric Tan",
             "CRL",
 
-            "T&C Coordinator",
+            "Eric Tan",
             "RTS",
-            "RTS",
-            "RTS",
-            "RTS",
-            "RTS",
-            "RTS",
+            "Ku, Teerapat Kian Xiong",
+            "Ku, Teerapat Kian Xiong",
+            "Ku, Teerapat Kian Xiong",
+            "Ku, Teerapat Kian Xiong",
+            "Ku, Teerapat Kian Xiong",
 
-            "T&C Coordinator",
+            "Eric Tan",
             "Train",
             "Train",
 
-            "T&C Coordinator",
+            "Eric Tan",
             "CSF",
         ],
         "Color Group": [
             "Management",
-            "Management",
 
+            "DTL",
             "DTL",
             "DTL",
             "DTL",
@@ -412,20 +498,23 @@ def prepare_clean_df(df):
     clean["Name / Team Name"] = clean["Name / Team Name"].astype(str).str.strip()
     clean = clean[clean["Name / Team Name"] != ""].copy()
 
+    clean["Type"] = clean["Type"].fillna("Person").astype(str).str.strip()
+    clean["Type"] = clean["Type"].replace({"": "Person"})
+
+    clean["Company"] = clean["Company"].fillna("").astype(str).str.strip()
+    clean["Company"] = clean["Company"].apply(normalise_company)
+
+    clean["Job Title"] = clean["Job Title"].fillna("").astype(str).str.strip()
+
     clean["Reports To"] = clean["Reports To"].fillna("None").astype(str).str.strip()
     clean["Reports To"] = clean["Reports To"].replace(
         {"": "None", "nan": "None", "NaN": "None"}
     )
 
-    clean["Job Title"] = clean["Job Title"].fillna("").astype(str).str.strip()
-
     clean["Color Group"] = clean["Color Group"].fillna("None").astype(str).str.strip()
     clean["Color Group"] = clean["Color Group"].replace(
         {"": "None", "nan": "None", "NaN": "None"}
     )
-
-    clean["Type"] = clean["Type"].fillna("Person").astype(str).str.strip()
-    clean["Type"] = clean["Type"].replace({"": "Person"})
 
     clean["Time Period"] = clean["Time Period"].fillna("").astype(str).str.strip()
 
@@ -506,7 +595,7 @@ def hex_to_reportlab_colour(hex_code, fallback="#ced4da"):
 st.markdown("### 📤 Upload Excel File")
 st.write(
     "Upload an Excel or CSV file with these columns: "
-    "`Name / Team Name`, `Type`, `Job Title`, `Reports To`, `Color Group`. "
+    "`Name / Team Name`, `Type`, `Company`, `Job Title`, `Reports To`, `Color Group`. "
     "`Time Period` is optional."
 )
 
@@ -566,12 +655,14 @@ filter_type = st.sidebar.radio(
     [
         "Show All (No Filters)",
         "Highlight by Name",
+        "Highlight by Company",
         "Highlight by Role Group",
         "Highlight by Color Group",
     ],
 )
 
 selected_person = "All"
+selected_company = "All"
 selected_role_group = "All"
 selected_dept = "All"
 
@@ -580,6 +671,12 @@ if filter_type == "Highlight by Name":
         "Select Name:",
         sorted(clean_df["Name / Team Name"].unique().tolist()),
     )
+
+elif filter_type == "Highlight by Company":
+    valid_companies = sorted([c for c in clean_df["Company"].unique().tolist() if c != ""])
+    selected_company = st.sidebar.selectbox("Select Company:", valid_companies)
+    company_count = len(clean_df[clean_df["Company"] == selected_company])
+    st.sidebar.success(f"👥 Total {selected_company} count: **{company_count}**")
 
 elif filter_type == "Highlight by Role Group":
     valid_roles = sorted([r for r in clean_df["Role Group"].unique().tolist() if r != ""])
@@ -640,19 +737,20 @@ with st.sidebar.expander("Click to change colors"):
 st.sidebar.header("📐 Chart Settings")
 
 with st.sidebar.expander("Layout Settings"):
-    chart_width = st.slider("Chart Width", 1000, 8000, 2400, 100)
-    chart_height = st.slider("Chart Height", 800, 10000, 3600, 100)
+    chart_width = st.slider("Chart Width", 1000, 8000, 2600, 100)
+    chart_height = st.slider("Chart Height", 800, 10000, 4200, 100)
 
 with st.sidebar.expander("Font and Box Settings", expanded=True):
     name_font_size = st.slider("Name Font Size", 8, 30, 12, 1)
+    company_font_size = st.slider("Company Font Size", 6, 24, 9, 1)
     role_font_size = st.slider("Role / Job Title Font Size", 6, 24, 10, 1)
     time_font_size = st.slider("Time Period Font Size", 6, 22, 9, 1)
 
-    node_width = st.slider("Box Width", 120, 400, 180, 10)
-    node_height = st.slider("Box Height", 50, 200, 75, 10)
+    node_width = st.slider("Box Width", 120, 450, 200, 10)
+    node_height = st.slider("Box Height", 60, 220, 95, 10)
 
     horizontal_gap = st.slider("PDF Horizontal Gap", 30, 220, 70, 5)
-    vertical_gap = st.slider("PDF Vertical Gap", 40, 240, 90, 5)
+    vertical_gap = st.slider("PDF Vertical Gap", 40, 260, 100, 5)
 
 
 # =========================================================
@@ -669,12 +767,16 @@ dynamic_color_groups = sorted(
     set(default_palette.keys()).union(set(clean_df["Color Group"].astype(str).tolist()))
 )
 
+dynamic_companies = sorted(
+    set(["", "Siemens", "Subcon"]).union(set(clean_df["Company"].astype(str).tolist()))
+)
+
 edited_df = st.data_editor(
     st.session_state.org_data,
     num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
-    height=380,
+    height=420,
     column_config={
         "Name / Team Name": st.column_config.TextColumn(
             "Name / Team Name",
@@ -685,6 +787,11 @@ edited_df = st.data_editor(
             help="Is this a real person or a structural team box?",
             options=["Person", "Team Box"],
             required=True,
+        ),
+        "Company": st.column_config.SelectboxColumn(
+            "Company",
+            help="Select Siemens or Subcon. Leave blank for team boxes.",
+            options=dynamic_companies,
         ),
         "Job Title": st.column_config.TextColumn(
             "Job Title",
@@ -746,6 +853,7 @@ def get_node_display_data(current_name, df):
 
     person = person_data.iloc[0]
 
+    company = person.get("Company", "")
     role = person.get("Job Title", "")
     role_group = person.get("Role Group", "")
     time_period = person.get("Time Period", "")
@@ -757,6 +865,8 @@ def get_node_display_data(current_name, df):
     if filter_active:
         if filter_type == "Highlight by Name" and current_name != selected_person:
             is_match = False
+        elif filter_type == "Highlight by Company" and company != selected_company:
+            is_match = False
         elif filter_type == "Highlight by Role Group" and role_group != selected_role_group:
             is_match = False
         elif filter_type == "Highlight by Color Group" and dept != selected_dept:
@@ -764,6 +874,7 @@ def get_node_display_data(current_name, df):
 
     return {
         "name": current_name,
+        "company": str(company),
         "role": str(role),
         "role_group": str(role_group),
         "time_period": str(time_period),
@@ -775,11 +886,16 @@ def get_node_display_data(current_name, df):
 
 def should_stack_people_under_this_node(current_name, df):
     """
-    This is the key logic.
+    Keeps the chart TOP-DOWN.
 
-    Chart stays TOP-DOWN.
-    DTL/JRL/CRL/RTS/Train/CSF stay side-by-side.
-    People under each group become a vertical chain.
+    Visual logic:
+        Eric Tan
+           ↓
+        DTL / JRL / CRL / RTS / Train / CSF
+           ↓
+        Manager / Coordinator / OSIT Manager
+           ↓
+        Rest of team stacked vertically
     """
     project_groups = ["DTL", "JRL", "CRL", "RTS", "Train", "CSF"]
 
@@ -797,40 +913,17 @@ def should_stack_people_under_this_node(current_name, df):
     job_title = str(row.get("Job Title", "")).strip().lower()
     reports_to = str(row.get("Reports To", "")).strip().lower()
 
-    # Also allow uploaded project boxes that are not exactly named DTL/JRL/etc.
-    if (
-        entry_type == "team box"
-        and reports_to not in ["none", ""]
-        and current_name.lower() not in ["t&c coordinator", "tc coordinator"]
-        and "manager" not in job_title
-        and "coordinator" not in job_title
-    ):
+    if entry_type == "team box" and reports_to not in ["none", ""]:
         return True
+
+    if entry_type == "person":
+        if "manager" in job_title or "coordinator" in job_title:
+            return True
 
     return False
 
 
 def build_tree(current_name, df, visited=None, real_supervisor=None):
-    """
-    Final visual layout:
-        T&C Manager
-             ↓
-        T&C Coordinator
-             ↓
-        DTL   JRL   CRL   RTS   Train   CSF
-         ↓     ↓     ↓     ↓      ↓      ↓
-       person person person person person person
-         ↓     ↓
-       person person
-         ↓
-       person
-
-    IMPORTANT:
-    - ECharts orientation remains TB.
-    - We do NOT use LR.
-    - Project people are displayed as a visual chain only.
-    - Their actual Reports To value still remains the project group.
-    """
     if visited is None:
         visited = set()
 
@@ -844,6 +937,7 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
     if node_data is None:
         return None
 
+    company = node_data["company"]
     role = node_data["role"]
     time_period = node_data["time_period"]
     dept = node_data["dept"]
@@ -867,6 +961,9 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
 
         display_text = f"{{name_faded|{current_name}}}"
 
+        if str(company).strip() != "":
+            display_text += f"\n{{company_faded|{company}}}"
+
         if str(role).strip() != "":
             display_text += f"\n{{role_faded|{role}}}"
 
@@ -882,6 +979,9 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
 
         display_text = f"{{name_active|{current_name}}}"
 
+        if str(company).strip() != "":
+            display_text += f"\n{{company_active|{company}}}"
+
         if str(role).strip() != "":
             display_text += f"\n{{role_active|{role}}}"
 
@@ -890,6 +990,7 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
 
     tooltip_value = (
         f"<b>Name / Team:</b> {current_name}<br/>"
+        f"<b>Company:</b> {company if str(company).strip() != '' else 'N/A'}<br/>"
         f"<b>Role:</b> {role if str(role).strip() != '' else 'N/A'}<br/>"
         f"<b>Color Group:</b> {dept}<br/>"
         f"<b>Time Period:</b> {time_period if str(time_period).strip() != '' else 'N/A'}<br/>"
@@ -905,9 +1006,6 @@ def build_tree(current_name, df, visited=None, real_supervisor=None):
         "children": [],
     }
 
-    # =====================================================
-    # TOP-DOWN + VERTICAL PEOPLE STACKING
-    # =====================================================
     if should_stack_people_under_this_node(current_name, df) and len(real_direct_reports) > 0:
         current_chain_link = node
 
@@ -967,6 +1065,7 @@ def build_chart_tree(df):
         },
         "raw": {
             "name": "Org Chart",
+            "company": "",
             "role": "Master Root",
             "role_group": "Master Root",
             "time_period": "",
@@ -982,11 +1081,6 @@ def build_chart_tree(df):
 # 11. PDF Export Functions
 # =========================================================
 def assign_tree_positions(root):
-    """
-    Top-down PDF layout.
-    Since project people are already chained in build_tree(),
-    the PDF also shows project people stacked vertically.
-    """
     positions = {}
     nodes = {}
     edges = []
@@ -1115,16 +1209,19 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
         c.line(child_x, mid_y, child_x, child_y)
 
     pdf_name_size = max(name_font_size * 0.8, 6)
+    pdf_company_size = max(company_font_size * 0.8, 5)
     pdf_role_size = max(role_font_size * 0.8, 5)
     pdf_time_size = max(time_font_size * 0.8, 5)
 
     name_y_offset = max(12, pdf_name_size + 5)
-    role_y_offset = name_y_offset + max(16, pdf_role_size + 8)
+    company_y_offset = name_y_offset + max(14, pdf_company_size + 6)
+    role_y_offset = company_y_offset + max(14, pdf_role_size + 6)
     time_y_offset_from_bottom = max(10, pdf_time_size + 4)
 
     for node_id, node in nodes.items():
         raw = node.get("raw", {})
         name = raw.get("name", "")
+        company = raw.get("company", "")
         role = raw.get("role", "")
         time_period = raw.get("time_period", "")
         dept = raw.get("dept", "")
@@ -1138,6 +1235,7 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
             fill = colors.HexColor("#f8f9fa")
             stroke = colors.HexColor("#ced4da")
             name_colour = colors.HexColor("#6c757d")
+            company_colour = colors.HexColor("#868e96")
             role_colour = colors.HexColor("#adb5bd")
             time_colour = colors.HexColor("#adb5bd")
 
@@ -1145,6 +1243,7 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
             fill = hex_to_reportlab_colour(node_color, "#ced4da")
             stroke = fill
             name_colour = colors.white
+            company_colour = colors.HexColor("#ffffff")
             role_colour = colors.HexColor("#f8f9fa")
             time_colour = colors.HexColor("#e9ecef")
 
@@ -1164,6 +1263,20 @@ def make_full_org_chart_pdf(tree_data, chart_title="T&C Organizational Chart"):
             pdf_name_size,
             max_lines=2,
         )
+
+        if str(company).strip() != "":
+            c.setFont("Helvetica-Bold", pdf_company_size)
+            c.setFillColor(company_colour)
+            draw_centered_wrapped_text(
+                c,
+                company,
+                left + 8,
+                top - company_y_offset,
+                box_w - 16,
+                "Helvetica-Bold",
+                pdf_company_size,
+                max_lines=1,
+            )
 
         if str(role).strip() != "":
             c.setFont("Helvetica", pdf_role_size)
@@ -1258,7 +1371,6 @@ if not clean_df.empty:
                     "type": "tree",
                     "data": [tree_data],
 
-                    # TB = top-down. Do not change to LR.
                     "orient": "TB",
 
                     "top": "5%",
@@ -1274,6 +1386,7 @@ if not clean_df.empty:
                     "expandAndCollapse": True,
                     "animationDuration": 550,
                     "animationDurationUpdate": 750,
+
                     "label": {
                         "position": "insideLeft",
                         "offset": [10, 0],
@@ -1283,6 +1396,12 @@ if not clean_df.empty:
                                 "fontWeight": "bold",
                                 "color": "#ffffff",
                                 "lineHeight": name_font_size + 6,
+                            },
+                            "company_active": {
+                                "fontSize": company_font_size,
+                                "fontWeight": "bold",
+                                "color": "#ffffff",
+                                "lineHeight": company_font_size + 5,
                             },
                             "role_active": {
                                 "fontSize": role_font_size,
@@ -1299,6 +1418,12 @@ if not clean_df.empty:
                                 "fontWeight": "bold",
                                 "color": "#6c757d",
                                 "lineHeight": name_font_size + 6,
+                            },
+                            "company_faded": {
+                                "fontSize": company_font_size,
+                                "fontWeight": "bold",
+                                "color": "#868e96",
+                                "lineHeight": company_font_size + 5,
                             },
                             "role_faded": {
                                 "fontSize": role_font_size,
